@@ -1,88 +1,45 @@
-// online_start_helper.js (mobile clickfix)
+// online_start_helper.js (slim; no autoconnect; robust mobile click)
 (function(){
-  function domReady(fn){
+  function ready(fn){
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, {once:true});
     else fn();
   }
+  ready(()=>{
+    const u = new URL(location.href);
+    if (!u.searchParams.get('room')) return;
 
-  domReady(()=>{
-    try{
-      const u = new URL(location.href);
-      const room = u.searchParams.get('room');
-      const ws   = u.searchParams.get('ws');
-      if (ws) window.NET_WS_URL = ws;
-      if (!room) return;
+    const wrap = document.createElement('div');
+    Object.assign(wrap.style, { position:'fixed', right:'8px', bottom:'8px', zIndex:'2147483647', pointerEvents:'none' });
+    const btn = document.createElement('button');
+    btn.textContent = 'Online Start';
+    btn.type = 'button';
+    Object.assign(btn.style, {
+      pointerEvents:'auto', padding:'12px 16px', borderRadius:'12px',
+      border:'1px solid #7a7a7a', background:'#fff', boxShadow:'0 4px 14px rgba(0,0,0,.18)',
+      fontSize:'15px', fontWeight:'600', WebkitTapHighlightColor:'rgba(0,0,0,0)',
+      touchAction:'manipulation', userSelect:'none', transform:'translateZ(0)'
+    });
+    wrap.appendChild(btn);
+    document.body.appendChild(wrap);
 
-      // Ensure adapter connects (if not already)
-      function ensureConnect(){
-        if (!window.Net) return false;
-        try{
-          if (!window.Net.isConnected || !window.Net.isConnected()){
-            window.Net.connect(room);
-          }
-        }catch(_){}
-        return true;
-      }
-      if (!ensureConnect()){
-        const t = setInterval(()=>{ if (ensureConnect()) clearInterval(t); }, 300);
-        setTimeout(()=> clearInterval(t), 6000);
-      }
+    function startOnline(ev){
+      if (ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }
+      if (!window.Net || !window.Net.isConnected || !window.Net.isConnected()){ alert('接続待ちです。数秒後に再度お試しください。'); return; }
+      const rows = +(u.searchParams.get('rows')||8);
+      const cols = +(u.searchParams.get('cols')||8);
+      const colors = +(u.searchParams.get('colors')||5);
+      const seed = Math.floor(Math.random()*1e9);
+      const payload = { seed, rows, cols, colors };
+      try { window.Net.start(payload); } catch {}
+      if (window.__applyStartMatch) window.__applyStartMatch(payload);
+      const prev = btn.textContent;
+      btn.textContent = 'Starting...';
+      btn.style.opacity = '0.75';
+      setTimeout(()=>{ btn.textContent = prev; btn.style.opacity = '1'; }, 800);
+    }
 
-      const btn = document.createElement('button');
-      btn.textContent = 'Online Start';
-      btn.setAttribute('type','button');
-      btn.setAttribute('aria-label','Start online match');
-      btn.tabIndex = 0;
-
-      const style = btn.style;
-      style.position = 'fixed';
-      style.right = '12px';
-      style.bottom = '12px';
-      style.padding = '12px 16px';
-      style.borderRadius = '12px';
-      style.border = '1px solid #7a7a7a';
-      style.background = '#ffffff';
-      style.boxShadow = '0 4px 14px rgba(0,0,0,.18)';
-      style.fontSize = '15px';
-      style.fontWeight = '600';
-      style.zIndex = '2147483647';       // max
-      style.pointerEvents = 'auto';
-      style.opacity = '1';
-      style.touchAction = 'manipulation';
-      style.userSelect = 'none';
-      style.webkitTapHighlightColor = 'rgba(0,0,0,0)';
-
-      function startOnline(ev){
-        try{
-          if (ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }
-          const rows = +(u.searchParams.get('rows')||8);
-          const cols = +(u.searchParams.get('cols')||8);
-          const colors = +(u.searchParams.get('colors')||5);
-          const seed = Math.floor(Math.random()*1e9);
-          const payload = { seed, rows, cols, colors };
-          if (!window.Net){ alert('Net adapter not loaded.'); return; }
-          // Broadcast
-          window.Net.start(payload);
-          // Apply locally
-          if (window.__applyStartMatch) window.__applyStartMatch(payload);
-          // Visual feedback
-          const prev = btn.textContent;
-          btn.textContent = 'Starting...';
-          btn.style.opacity = '0.7';
-          setTimeout(()=>{ btn.textContent = prev; btn.style.opacity = '1'; }, 800);
-          console.log('[OnlineStart] payload', payload);
-        }catch(e){
-          console.warn('[OnlineStart] error', e);
-          alert('Online start failed: ' + e.message);
-        }
-      }
-
-      // Capture touch/click before game handlers
-      btn.addEventListener('pointerdown', startOnline, {capture:true});
-      btn.addEventListener('touchstart', startOnline, {capture:true, passive:false});
-      btn.addEventListener('click', startOnline, {capture:true});
-
-      document.body.appendChild(btn);
-    }catch(e){ console.warn('[online_start_helper clickfix]', e); }
+    btn.addEventListener('pointerdown', startOnline, {capture:true});
+    btn.addEventListener('touchstart', startOnline, {capture:true, passive:false});
+    btn.addEventListener('click', startOnline, {capture:true});
   });
 })();
