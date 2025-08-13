@@ -2,16 +2,16 @@
 import http from 'http';
 import { WebSocketServer } from 'ws';
 
-// HTTP server for Render health check
+// HTTP healthcheck for Render
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('ok');
 });
 
-// Bind WebSocket to same HTTP server
+// Attach WS to HTTP server
 const wss = new WebSocketServer({ server });
 
-// Listen on Render's PORT
+// Listen on Render's PORT (fallback 8080)
 const PORT = Number(process.env.PORT || 8080);
 server.listen(PORT, () => console.log('[relay] listening on', PORT));
 

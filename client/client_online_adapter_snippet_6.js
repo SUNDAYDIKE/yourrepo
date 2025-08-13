@@ -1,4 +1,4 @@
-// client_online_adapter_snippet.js (v7): singleton + auto-WS + DOM events + default apply
+// client_online_adapter_snippet.js (singleton + auto-WS + room-full handling)
 (function(){
   const U = new URL(location.href);
   const ROOM = U.searchParams.get('room');
@@ -12,11 +12,8 @@
     return proto + '//localhost:8080';
   }
 
-  function dispatch(name, detail){
-    try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch {}
-  }
-
-  let ws=null, myId=null, roomId=null, connected=false;
+  let ws=null, myId=null, roomId=null;
+  let connected=false;
 
   function canSend(){ return ws && ws.readyState === 1; }
 
@@ -25,7 +22,7 @@
     roomId = room;
     const url = getWSURL();
     console.log('[Net] connecting to', url, 'room=', roomId);
-    // warmup Render
+    // wake Render (ignore result)
     try{
       const httpURL = url.replace(/^wss:/,'https:').replace(/^ws:/,'http:');
       const u = new URL(httpURL); fetch(u.origin + '/', { mode:'no-cors' }).catch(()=>{});
@@ -37,43 +34,25 @@
     ws.onopen = () => {
       connected = true;
       try { ws.send(JSON.stringify({ type:'join', room: roomId })); } catch {}
-      dispatch('net:open', { room: roomId });
     };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch { return; }
-      if (m.type === 'joined'){
-        myId = m.id; window.Net._id = myId;
-        dispatch('net:joined', { id: myId, room: roomId });
-        if (window.Net.onMessage) window.Net.onMessage(m);
-        return;
-      }
+      if (m.type === 'hello') return;
+      if (m.type === 'joined'){ myId=m.id; window.Net._id=myId; if (window.Net.onMessage) window.Net.onMessage(m); return; }
       if (m.type === 'error' && m.error === 'room_full'){
         alert('この部屋は満員です（2人まで）。別の room を指定してください。');
         try { ws.close(1001, 'room_full'); } catch {}
-        dispatch('net:error', { code:'room_full' });
         return;
       }
-      // Default apply + event dispatch
-      if (m.type === 'start'){
-        if (window.__applyStartMatch) try { window.__applyStartMatch(m.payload); } catch(e){ console.warn(e); }
-        dispatch('net:start', m.payload);
-        if (window.Net.onMessage) window.Net.onMessage(m);
-        return;
-      }
-      if (m.type === 'state'){
-        if (window.__applyState) try { window.__applyState(m.payload); } catch(e){ console.warn(e); }
-        dispatch('net:state', m.payload);
-        if (window.Net.onMessage) window.Net.onMessage(m);
-        return;
-      }
-      if (m.type === 'cmd'){
-        dispatch('net:cmd', m);
-        if (window.Net.onMessage) window.Net.onMessage(m);
-        return;
+      if (!window.Net.onMessage){
+        if (m.type === 'start' && window.__applyStartMatch){ window.__applyStartMatch(m.payload); return; }
+        if (m.type === 'state' && window.__applyState){ window.__applyState(m.payload); return; }
+      } else {
+        window.Net.onMessage(m);
       }
     };
-    ws.onclose = () => { connected=false; dispatch('net:close', {}); };
-    ws.onerror = () => { dispatch('net:error', { code:'ws_error' }); };
+    ws.onclose = () => { connected=false; };
+    ws.onerror = () => { /* noop */ };
     return true;
   }
 
@@ -90,5 +69,6 @@
   };
 
   if (ROOM){ ensureSingleConnect(ROOM); }
-  console.log('[Net] adapter v7 loaded.');
+
+  console.log('[Net] singleton adapter loaded.');
 })();
