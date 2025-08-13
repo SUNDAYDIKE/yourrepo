@@ -1,0 +1,11 @@
+{
+  "name": "looplines-relay",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.15.0"
+  },
+  "scripts": {
+    "start": "node server_ws_relay.js"
+  }
+}

@@ -1,0 +1,1507 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LoopLines – Versus v1.08h (fix11)</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { height: 100%; background: #0f172a; }
+  body { color: #e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Ubuntu, Cantarell, Helvetica Neue, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+  img.pixel { image-rendering: pixelated; image-rendering: crisp-edges; }
+  @keyframes burstGlow { 0%{ stroke-width:6;  fill-opacity:0 } 24%{ stroke-width:28; fill-opacity:1 } 100%{ stroke-width:12;  fill-opacity:0.9 } }
+  @keyframes idle { 0%{ transform: translateY(0) } 50%{ transform: translateY(-0.6px) } 100%{ transform: translateY(0) } }
+  @keyframes ready { 0%{ transform: translateY(0) } 50%{ transform: translateY(-1px) rotate(-0.4deg) } 100%{ transform: translateY(0) } }
+  @keyframes guardShake { 0%,100%{ transform: translateX(0) } 25%{ transform: translateX(-1.2px) } 75%{ transform: translateX(1.2px) } }
+  @keyframes impactPop { 0%{ transform: translate(-50%,-50%) scale(0.56); opacity:0.95 } 100%{ transform: translate(-50%,-50%) scale(1.08); opacity:0 } }
+  @keyframes floatDmg { 0%{ transform: translateY(0); opacity:1 } 100%{ transform: translateY(-24px); opacity:0 } }
+  @keyframes superDash { 0%{ transform: translateX(0) } 100%{ transform: translateX(22px) } }
+  @keyframes superDashR { 0%{ transform: translateX(0) } 100%{ transform: translateX(-22px) } }
+  @keyframes hitStun { 0%{ transform: translateY(0) scale(1) } 20%{ transform: translateY(-2px) scale(1.04) } 60%{ transform: translateY(1px) scale(0.98) } 100%{ transform: translateY(0) scale(1) } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="env,react">
+const { useMemo, useRef, useState, useEffect } = React;
+
+// ==== Local image file names (place next to this HTML) ====
+const IMG_PATHS = {
+  neutral: "neutral.png",
+  guard: "guard.png",
+  ready: "ready.png",
+  attack_up: "up.png",
+  attack_down: "down.png",
+  attack_thrust: "thrust.png",
+  attack_kick: "kick.png",
+  hurt: "hurt.png"
+};
+
+/** =================== Global Config =================== */
+const CELL = 48;
+const GAP  = 6;
+const DEFAULT_ROWS = 10;
+const DEFAULT_COLS = 8;
+const MAX_COLORS = 11;
+
+const BASE5 = ["#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6"];
+
+const SCORE_CFG = { basePerEdge:10, passThroughPerCell:2, comboStep:0.25, comboResetMs:4000 };
+const BLINK_MS = 220, CLEAR_PAUSE_MS = 120, FALL_MS = 160, HIT_RADIUS_SCALE = 0.92, DURATION_MS = 99_000;
+
+/** =================== Fight Config (with caps) ==================== */
+const DMG_PER_CORNER = 4;
+const CLASH_WINDOW_MS = 120;
+const GUARD_REDUCTION = 0.50;
+const BARRIER_REDUCTION = 0.25;
+const SUPER_MAX = 100, SUPER_RATE_PER_100MS = 0.5, SUPER_DAMAGE = 120;
+const SUPER_POSE_MS = 680;
+const HIT_STUN_MS = 520, GUARD_POSE_MS = 260;
+const SUPER_LOCK_MS = 1400;
+const COMBO_SCALE_CAP = 2.2;
+
+/** =================== Items =================== */
+const ITEM_CHECK_MS = 3000, HEAL_FRAC = 0.12, BARRIER_MS = 5000;
+
+/** Utils */
+const keyRC = (r, c) => r + "," + c;
+const EPS = 1e-6;
+const uid = () => Math.random().toString(36).slice(2, 10);
+function randInt(n){ return Math.floor(Math.random()*n); }
+
+function centerSquare(r, c) { return { x: c * (CELL + GAP) + CELL / 2, y: r * (CELL + GAP) + CELL / 2 }; }
+function bresenhamCells(r0, c0, r1, c1) {
+  const cells = [];
+  let x0=c0,y0=r0,x1=c1,y1=r1;
+  const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0);
+  const sx=x0<x1?1:-1, sy=y0<y1?1:-1;
+  let err=dx-dy, x=x0, y=y0;
+  while(true){
+    cells.push([y,x]);
+    if (x===x1 && y===y1) break;
+    const e2=2*err;
+    if (e2>-dy){ err-=dy; x+=sx; }
+    if (e2<dx){ err+=dx; y+=sy; }
+  }
+  const expanded = new Set(cells.map(([rr,cc])=> keyRC(rr,cc)));
+  for(let i=1;i<cells.length;i++){
+    const [rP,cP]=cells[i-1], [rC,cC]=cells[i];
+    if (rP!==rC && cP!==cC){ expanded.add(keyRC(rP,cC)); expanded.add(keyRC(rC,cP)); }
+  }
+  return Array.from(expanded).map(s=> s.split(",").map(Number));
+}
+function cross(ax, ay, bx, by) { return ax*by - ay*bx; }
+function segSegIntersect(p, p2, q, q2){
+  const r={x:p2.x-p.x,y:p2.y-p.y}, s={x:q2.x-q.x,y:q2.y-q.y};
+  const denom = cross(r.x,r.y,s.x,s.y); if (Math.abs(denom)<EPS) return null;
+  const qp={x:q.x-p.x,y:q.y-p.y};
+  const t = cross(qp.x,qp.y,s.x,s.y)/denom, u = cross(qp.x,qp.y,r.x,r.y)/denom;
+  if (t>EPS && t<1-EPS && u>EPS && u<1-EPS) return { x:p.x+r.x*t, y:p.y+r.y*t, t,u };
+  return null;
+}
+function buildGraph(points){
+  const segments=[]; for(let i=0;i<points.length;i++){ const a=points[i], b=points[(i+1)%points.length]; segments.push({a,b}); }
+  const splits=segments.map(()=>[0,1]);
+  for(let i=0;i<splits.length;i++){
+    for(let j=i+1;j<splits.length;j++){
+      if (Math.abs(i-j)<=1 || (i===0 && j===segments.length-1)) continue;
+      const s1=segments[i], s2=segments[j];
+      const inter=segSegIntersect(s1.a,s1.b,s2.a,s2.b);
+      if (inter){ splits[i].push(inter.t); splits[j].push(inter.u); }
+    }
+  }
+  for (let i=0;i<splits.length;i++) splits[i] = Array.from(new Set(splits[i].sort((a,b)=>a-b)));
+  const nodes=[]; const idByKey=new Map(); function getId(p){ const k=p.x.toFixed(4)+","+p.y.toFixed(4); if(!idByKey.has(k)){ idByKey.set(k,nodes.length); nodes.push({x:p.x,y:p.y}); } return idByKey.get(k); }
+  const edges=new Set(); const addEdge=(u,v)=>{ if(u===v) return; const a=Math.min(u,v), b=Math.max(u,v); edges.add(a+","+b); };
+  for(let i=0;i<segments.length;i++){
+    const s=segments[i], arr=splits[i];
+    for(let k=0;k+1<arr.length;k++){
+      const t0=arr[k], t1=arr[k+1]; if (t1-t0<EPS) continue;
+      const p0={x:s.a.x+(s.b.x-s.a.x)*t0, y:s.a.y+(s.b.y-s.a.y)*t0};
+      const p1={x:s.a.x+(s.b.x-s.a.x)*t1, y:s.a.y+(s.b.y-s.a.y)*t1};
+      addEdge(getId(p0), getId(p1));
+    }
+  }
+  const out=new Map(); const ang=(from,to)=> Math.atan2(nodes[to].y-nodes[from].y, nodes[to].x-nodes[from].x);
+  edges.forEach(ev=>{ const [a,b]=ev.split(",").map(Number); if(!out.has(a)) out.set(a,[]); if(!out.has(b)) out.set(b,[]); out.get(a).push({to:b,ang:ang(a,b)}); out.get(b).push({to:a,ang:ang(b,a)}); });
+  out.forEach(arr=> arr.sort((p,q)=> p.ang-q.ang));
+  const visited=new Set(); const edgeKey=(u,v)=> u+"->"+v;
+  function nextEdge(u,v){ const arr=out.get(v); const angRev=Math.atan2(nodes[u].y-nodes[v].y, nodes[u].x-nodes[v].x); let idx=0; while(idx<arr.length && arr[idx].ang < angRev - EPS) idx++; const nxt=arr[(idx-1+arr.length)%arr.length]; return {from:v,to:nxt.to}; }
+  const faces=[];
+  for (let u=0;u<nodes.length;u++){
+    const outs=out.get(u) || [];
+    for (const o of outs){
+      if (visited.has(edgeKey(u,o.to))) continue;
+      let loop=[], a=u, b=o.to, startKey=edgeKey(a,b);
+      while(true){ visited.add(edgeKey(a,b)); loop.push(a); const nxt=nextEdge(a,b); a=nxt.from; b=nxt.to; if (edgeKey(a,b)===startKey){ loop.push(a); break; } if (loop.length>2000) break; }
+      if (loop.length<4) continue;
+      if (loop[0]!==loop[loop.length-1]) continue;
+      const poly = loop.slice(0,-1).map(id=>nodes[id]);
+      const area = polygonArea(poly);
+      if (Math.abs(area)<1) continue;
+      faces.push({nodes:poly, area});
+    }
+  }
+  if (faces.length>0){ const maxIdx = faces.reduce((mi,f,i)=> (Math.abs(f.area)>Math.abs(faces[mi].area)?i:mi),0); faces.splice(maxIdx,1); }
+  return { faces };
+}
+function polygonArea(poly){ let s=0; for(let i=0;i<poly.length;i++){ const a=poly[i], b=poly[(i+1)%poly.length]; s+=a.x*b.y - a.y*b.x; } return 0.5*s; }
+function distPointToSegment(ax, ay, bx, by, px, py){ const vx=bx-ax, vy=by-ay; const wx=px-ax, wy=py-ay; const vv=vx*vx+vy*vy; const t = vv<EPS ? 0 : Math.max(0, Math.min(1, (wx*vx+wy*vy)/vv)); const cx=ax+vx*t, cy=ay+vy*t; const dx=px-cx, dy=py-cy; return Math.hypot(dx,dy); }
+function tokenHitBySegment(r1,c1,r2,c2,rt,ct){ const a=centerSquare(r1,c1), b=centerSquare(r2,c2), p=centerSquare(rt,ct); const d=distPointToSegment(a.x,a.y,b.x,b.y,p.x,p.y); const R=(CELL/2)*HIT_RADIUS_SCALE; return d<=R+0.5; }
+
+/** Palette */
+function hsl(h,s,l){ return `hsl(${h} ${s}% ${l}%)`; }
+function paletteFromSeed(seed, count){
+  if (count<=5) return BASE5.slice(0,count);
+  const extras=count-5; const rng=mulberry32(seed); const startHue=Math.floor(rng()*360); const golden=137.508; const sat=76, light=52;
+  const hues=[]; for(let i=0;i<extras*3;i++) hues.push((startHue+Math.round(i*golden))%360);
+  const chosen=BASE5.map(c=> rgbToH(c).h);
+  function farEnough(h){ return chosen.every(ch=>{ let d=Math.abs(h-ch); d=Math.min(d,360-d); return d>=18; }); }
+  const out=BASE5.slice();
+  for(const h of hues){ if (out.length>=count) break; if (farEnough(h)){ out.push(hsl(h,sat,light)); chosen.push(h); } }
+  while(out.length<count){ out.push(hsl((startHue+out.length*golden)%360, sat, light)); }
+  return out;
+}
+function rgbToH(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {h:0,s:0,l:0}; let r=parseInt(m[1],16)/255, g=parseInt(m[2],16)/255, b=parseInt(m[3],16)/255; const max=Math.max(r,g,b), min=Math.min(r,g,b); let h,s,l=(max+min)/2; if (max===min){ h=s=0; } else { const d=max-min; s=l>0.5 ? d/(2-max-min) : d/(max+min); switch(max){ case r:h=(g-b)/d+(g<b?6:0); break; case g:h=(b-r)/d+2; break; case b:h=(r-g)/d+4; break; } h*=60; } return {h,s,l}; }
+function mulberry32(a){ return function(){ a|=0; a=(a+0x6D2B79F5)|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|a)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+/** =================== Tokens =================== */
+function makeTokenFactory(){ const nextId={v:1}; return (color)=>({ id: nextId.v++, color }); }
+const makeToken = makeTokenFactory();
+function colorsSeedGrid(seed, rows, cols, colorCount) {
+  const rng = mulberry32(seed);
+  const palette = paletteFromSeed(seed, Math.min(colorCount, MAX_COLORS));
+  const g = [];
+  for (let r=0;r<rows;r++){ const row=[]; for(let c=0;c<cols;c++){ row.push(palette[Math.floor(rng()*palette.length)]); } g.push(row); }
+  return g;
+}
+function tokensFromColors(colorGrid){ return colorGrid.map(row=> row.map(color=> ({ id: makeToken(color).id, color }))); }
+function toPointsAttr(points){ if (!Array.isArray(points)||points.length<3) return null; for(const p of points){ if (!p||typeof p.x!=='number'||Number.isNaN(p.x)||Number.isNaN(p.y)) return null; } return points.map(p=> (p.x+","+p.y)).join(" "); }
+
+/** =================== Fighter (Sprite) =================== */
+function ImpactRings({ rings=[], side='LEFT' }){
+  const offset = side==='LEFT' ? 12 : -12;
+  return (
+    <>
+      {rings.map(r => {
+        let bg;
+        if (r.kind==='BARRIER'){
+          bg = 'radial-gradient(circle, rgba(80,220,255,0.85) 0%, rgba(80,200,255,0.5) 40%, rgba(80,200,255,0) 70%)';
+        } else if (r.kind==='GUARD'){
+          bg = 'radial-gradient(circle, rgba(90,160,255,0.85) 0%, rgba(90,160,255,0.5) 40%, rgba(90,160,255,0) 70%)';
+        } else {
+          // HIT: red only (no white)
+          bg = 'radial-gradient(circle, rgba(255,90,90,0.9) 0%, rgba(240,50,50,0.6) 45%, rgba(220,20,20,0) 75%)';
+        }
+        return (
+          <div key={r.id}
+               className="pointer-events-none absolute left-1/2 top-1/2 rounded-full"
+               style={{
+                 width: r.size + 'px', height: r.size + 'px',
+                 transform: `translate(calc(-50% + ${offset}px), -50%)`,
+                 background: bg,
+                 filter: 'blur(3px)',
+                 animation: 'impactPop 360ms ease-out forwards'
+               }}
+          />
+        );
+      })}
+    </>
+  );
+}
+function BarrierAura({ active=false, side='LEFT' }){
+  if (!active) return null;
+  const offset = side==='LEFT' ? -6 : 6;
+  return (
+    <div className="pointer-events-none absolute inset-0" style={{ filter:'blur(2px)' }}>
+      <div className="absolute left-1/2 top-1/2 rounded-full" style={{
+        width:'140px', height:'140px',
+        transform:`translate(calc(-50% + ${offset}px), -50%)`,
+        background:'radial-gradient(circle, rgba(80,200,255,0.40) 0%, rgba(80,200,255,0.18) 40%, rgba(80,200,255,0) 70%)'
+      }}/>
+    </div>
+  );
+}
+function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], scale=1.0, plans=0, barrier=false, showDamage=true, floats=[] , hitBanner=null, imgRef=null }){
+  const attackMap = [IMG_PATHS.attack_up, IMG_PATHS.attack_down, IMG_PATHS.attack_thrust, IMG_PATHS.attack_kick];
+  const srcPath = state==='GUARD' ? IMG_PATHS.guard
+           : state==='PREP' ? IMG_PATHS.ready
+           : state==='ATTACK' ? attackMap[attackIndex % attackMap.length]
+           : state==='HIT' ? IMG_PATHS.hurt
+           : state==='SUPER_DASH' ? IMG_PATHS.attack_thrust
+           : IMG_PATHS.neutral;
+  const flip = side==='RIGHT' ? 'scaleX(-1)' : 'none';
+  const dashAnim = state==='SUPER_DASH' ? (side==='LEFT' ? 'animate-[superDash_0.18s_linear_1]' : 'animate-[superDashR_0.18s_linear_1]') : '';
+  const hitAnim = state==='HIT' ? 'animate-[hitStun_0.52s_ease-out_1]' : '';
+  const guardAnim = state==='GUARD' ? 'animate-[guardShake_0.22s_linear_1]' : '';
+  return (
+    <div className={`relative ${guardAnim} ${hitAnim} ${dashAnim}`} style={{ width: 128*scale, height: 128*scale }}>
+      <BarrierAura active={barrier} side={side} />
+      <img ref={imgRef} className="pixel absolute inset-0" src={srcPath} onError={(e)=>{ e.currentTarget.style.display='none'; }} style={{ transform: flip, width: '100%', height: '100%' }} alt="fighter" />
+      {plans>0 && <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-yellow-300 font-bold drop-shadow">x{plans}</div>}
+      {hitBanner && <div className="absolute -top-10 left-1/2 -translate-x-1/2 text-fuchsia-300 font-extrabold drop-shadow animate-[floatDmg_900ms_ease-out_forwards]">{hitBanner}</div>}
+      {showDamage && (
+        <div className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 mt-4">
+          {floats.map(f => (<div key={f.id} className={`font-bold ${f.type==='HIT'?'text-red-400':'text-sky-300'}`} style={{ animation: 'floatDmg 900ms ease-out forwards' }}> -{f.text} </div>))}
+        </div>
+      )}
+      <ImpactRings rings={rings} side={side} />
+    </div>
+  );
+}
+
+/** =================== Board =================== */
+function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
+  // --- Online (minimal) hooks ---
+  const onlineRef = useRef({ connected:false, myId:null });
+  useEffect(() => {
+    // Expose local apply API for remote commands
+    window.__applyStart   = (r,c) => onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+    window.__applyExtend  = (r,c) => onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+    window.__applyCancelLast = () => { 
+      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
+      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+    };
+    window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); };
+
+    // Auto-connect if URL has ?room= & optional &ws=
+    try{
+      const u = new URL(window.location.href);
+      const room = u.searchParams.get('room');
+      const ws   = u.searchParams.get('ws');
+      if (ws) window.NET_WS_URL = ws; // adapter reads this
+      if (room && window.Net){
+        Net.connect(room);
+        Net.onMessage = (m) => {
+          if (m.type === 'joined'){ onlineRef.current.myId = m.id; return; }
+          if (m.type === 'start' && window.__applyStartMatch){
+            window.__applyStartMatch(m.payload);
+            return;
+          }
+          if (m.type === 'cmd'){
+            // Ignore own echo
+            if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
+            const { kind, args } = m.cmd || {};
+            if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
+            if (kind === 'twoFinger')  return window.__applyCancelLast?.();
+            if (kind === 'closeLoop')  return window.__applyClose?.();
+          }
+        };
+        // Mark connected when socket opens
+        const _timer = setInterval(()=>{
+          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
+        }, 300);
+      }
+    }catch(e){ console.warn(e); }
+  }, []);
+
+  const BOARD_W = cols * CELL + (cols - 1) * GAP;
+  const BOARD_H = rows * CELL + (rows - 1) * GAP;
+
+  const [grid, setGrid] = useState(()=> tokensFromColors(colorSeedGrid));
+  const [path, setPath] = useState([]);
+  const [start, setStart] = useState(null);
+  const [activeColor, setActiveColor] = useState(null);
+
+  const [isClosing, setIsClosing] = useState(false);
+  const [glowFaces, setGlowFaces] = useState([]);
+  const [animShift, setAnimShift] = useState({});
+
+  const [combo, setCombo] = useState(1.0);
+  const comboTimer = useRef(null);
+  const [announcements, setAnnouncements] = useState([]);
+  const boardRef = useRef(null); // DOM for board area
+  const [blink, setBlink] = useState(false);
+  useEffect(()=>{ const id=setInterval(()=> setBlink(b=>!b), BLINK_MS); return ()=> clearInterval(id); },[]);
+
+  const [leftDown, setLeftDown] = useState(false);
+  const [closingArmed, setClosingArmed] = useState(false);
+
+  const [score, setScore] = useState(0);
+  useEffect(()=>{ if(exposeScoreRef) exposeScoreRef.current = score; },[score, exposeScoreRef]);
+
+  const cancelEpochRef = useRef(0);
+
+  useEffect(()=>{
+    setGrid(tokensFromColors(colorSeedGrid));
+    setPath([]); setStart(null); setActiveColor(null);
+    setIsClosing(false); setClosingArmed(false);
+    setCombo(1.0); setScore(0); setAnnouncements([]);
+    onPhase?.("NEUTRAL"); onPreparedChange?.(false);
+    const setc = new Set();
+    for (const row of colorSeedGrid) for (const col of row) setc.add(col);
+    onPalette?.(Array.from(setc));
+  }, [colorSeedGrid]);
+
+  useEffect(()=>{
+    if (cancelSignal!=null){
+      cancelEpochRef.current += 1;
+      setIsClosing(false); setClosingArmed(false);
+      setPath([]); setStart(null); setActiveColor(null);
+      onPhase?.("NEUTRAL"); onPreparedChange?.(false);
+    }
+  }, [cancelSignal]);
+
+  useEffect(()=>{
+    const setc = new Set();
+    for (const row of grid) for (const cell of row) if (cell) setc.add(cell.color);
+    onPalette?.(Array.from(setc));
+  }, [grid]);
+
+  const segments = useMemo(()=>{ const segs=[]; for(let i=0;i+1<path.length;i++){ const [r1,c1]=path[i], [r2,c2]=path[i+1]; const p1=centerSquare(r1,c1), p2=centerSquare(r2,c2); segs.push({x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y}); } return segs; },[path]);
+
+  const highlightSet = useMemo(()=>{
+    const set = new Set();
+    if (path.length === 0) return set;
+    for (let i=0;i+1<path.length;i++){
+      const [r1,c1]=path[i], [r2,c2]=path[i+1];
+      const candidates = bresenhamCells(r1,c1,r2,c2);
+      for (const [rr,cc] of candidates){
+        if (rr<0||rr>=rows||cc<0||cc>=cols) continue;
+        const tok = grid[rr][cc]; if (!tok) continue;
+        if (tokenHitBySegment(r1,c1,r2,c2,rr,cc)) set.add(keyRC(rr,cc));
+      }
+      set.add(keyRC(r1,c1)); set.add(keyRC(r2,c2));
+    }
+    if (!isCPU && closingArmed && start && path.length>=3){
+      const [r1,c1] = path[path.length-1];
+      const [r2,c2] = start;
+      const candidates = bresenhamCells(r1,c1,r2,c2);
+      for (const [rr,cc] of candidates){
+        if (rr<0||rr>=rows||cc<0||cc>=cols) continue;
+        const tok = grid[rr][cc]; if (!tok) continue;
+        if (tokenHitBySegment(r1,c1,r2,c2,rr,cc)) set.add(keyRC(rr,cc));
+      }
+      set.add(keyRC(r1,c1)); set.add(keyRC(r2,c2));
+    }
+    return set;
+  }, [path, grid, start, closingArmed, isCPU, rows, cols]);
+
+  function pushAnnounce(text){ const item={ id: Date.now()+Math.random(), text, ts: Date.now() }; setAnnouncements(a=> [item, ...a].slice(0,6)); setTimeout(()=>{ setAnnouncements(a=> a.filter(x=>x.id!==item.id)); }, 4000); }
+  function armComboReset(){ if(comboTimer.current) window.clearTimeout(comboTimer.current); comboTimer.current = window.setTimeout(()=>setCombo(1.0), SCORE_CFG.comboResetMs); }
+  function resetPath(){ setPath([]); setStart(null); setActiveColor(null); setIsClosing(false); setClosingArmed(false); onPhase?.("NEUTRAL"); onPreparedChange?.(false); }
+
+  function canTapColor(token, r, c){
+    if (locked) return false;
+    const color = token?.color;
+    if(!start) return true;
+    if (r===start[0] && c===start[1] && path.length>=3) return true;
+    return color && color===activeColor;
+  }
+
+  function onCellTap(r,c){
+    if (locked) return;
+    if (!active && !isCPU) return;
+    const token=grid[r][c];
+    const color=token?.color;
+    if(!start){
+      setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true); return;
+    }
+    if(r===start[0] && c===start[1]){
+      if(path.length>=3){
+        if (isCPU) { setIsClosing(true); handleLoopClose(); }
+        else { setIsClosing(true); setClosingArmed(true); }
+      } else { pushAnnounce("3点以上でループ"); }
+      return;
+    }
+    if(!color || color!==activeColor) return;
+    if(path.some(([rr,cc])=> rr===r && cc===c)) return;
+    setPath(p=>[...p,[r,c]]);
+  }
+
+  // window mouseup: close if armed
+  useEffect(() => {
+    if (isCPU) return;
+    function onWinMouseUp(e){
+      if (e.button === 0) {
+        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+        setLeftDown(false); setClosingArmed(false);
+      }
+    }
+    window.addEventListener('mouseup', onWinMouseUp);
+    function onWinTouchEnd(){
+      if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+      setLeftDown(false); setClosingArmed(false);
+    }
+    window.addEventListener('touchend', onWinTouchEnd);
+    return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
+  }, [closingArmed, isCPU]);
+
+  // Right-click: if leftDown cancel only the in-progress input (closing attempt only).
+  
+  function handleOuterMouseDown(e){
+    if (isCPU || locked) return;
+    // if click happened outside board area => act as "right-click only" close
+    const br = boardRef.current?.getBoundingClientRect();
+    if (!br) return;
+    const x = e.clientX, y = e.clientY;
+    const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
+    if (!inside && start && path.length>=3){
+      e.preventDefault();
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
+    }
+  }
+  function handleOuterTouchStart(e){
+    if (isCPU || locked) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const br = boardRef.current?.getBoundingClientRect();
+    if (!br) return;
+    const x = t.clientX, y = t.clientY;
+    const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
+    if (!inside && start && path.length>=3){
+      e.preventDefault();
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
+    }
+  }
+function handleContext(e){
+    if (isCPU) return;
+    e.preventDefault();
+    if (locked) return;
+    if (leftDown){
+      if (closingArmed){
+        setIsClosing(false);
+        setClosingArmed(false);
+      } else {
+        setPath(p => (p.length>1 ? p.slice(0,-1) : p));
+      }
+      return;
+    }
+    if (start && path.length>=3){
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); return;
+    }
+  }
+
+  async function handleLoopClose(){
+    const myEpoch = cancelEpochRef.current;
+    const vertsRC = [...path];
+    const pts = vertsRC.map(([r,c])=> centerSquare(r,c));
+    const { faces } = buildGraph(pts);
+
+    const counts = new Map(); let edgesSum = 0;
+    for(const f of faces){ const n=f.nodes.length; counts.set(n,(counts.get(n)||0)+1); edgesSum += n; }
+    const ordered = [...counts.entries()].sort((a,b)=>a[0]-b[0]);
+    pushAnnounce( ordered.map(([n,k])=> n + "角形×" + k).join(" / ") || "面なし" );
+
+    const plannedHits = faces.length>0 ? faces.length : 1;
+    onPlannedHits?.({ hits: plannedHits });
+
+    if (itemsEnabled && item){
+      if (faces.length===1 && faces[0]?.nodes?.length === (item.markSides || 4) && !item.claimed){
+        onItemClaim?.(item);
+      }
+    }
+
+    if (faces.length===1 && faces[0].nodes && faces[0].nodes.length===3){
+      onSuperTriangle?.({ color: activeColor });
+    }
+
+    if (faces.length === 0) {
+      onAttackFrame?.({ sides: Math.max(vertsRC.length, 3) });
+    } else {
+      await glowFacesSequential(faces, glowMs, (nSides)=> { onAttackFrame?.({ sides: nSides }); });
+      if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+    }
+
+    if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+
+    const toClearLine = new Set();
+    for(let i=0;i<vertsRC.length;i++){
+      const [r1,c1]=vertsRC[i]; const [r2,c2]=vertsRC[(i+1)%vertsRC.length];
+      const candidates = bresenhamCells(r1,c1,r2,c2);
+      for (const [rr,cc] of candidates){
+        if (rr<0||rr>=rows||cc<0||cc>=cols) continue;
+        const tok = grid[rr][cc]; if(!tok) continue;
+        if (tokenHitBySegment(r1,c1,r2,c2,rr,cc)) toClearLine.add(keyRC(rr,cc));
+      }
+      toClearLine.add(keyRC(r1,c1)); toClearLine.add(keyRC(r2,c2));
+    }
+    const faceScore = edgesSum * SCORE_CFG.basePerEdge;
+    const passBonus = (toClearLine.size - new Set(vertsRC.map(([r,c])=>keyRC(r,c))).size) * SCORE_CFG.passThroughPerCell;
+    const gained = Math.round((faceScore + Math.max(0, passBonus)) * combo);
+    onScore?.(gained);
+    setScore(s=> s+gained); pushAnnounce("+" + gained + " 点");
+
+    if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+    await applyClearAndGravityAnimated(toClearLine, rows, cols, colorSeedGrid);
+    if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+
+    setCombo(c=> Number((c + SCORE_CFG.comboStep).toFixed(2))); armComboReset(); resetPath();
+  }
+
+  function applyClearAndGravitySync(toClearLine, rows, cols, colorSeedGrid){
+    const finalGrid = Array.from({ length: rows }, () => Array(cols).fill(null));
+    const fallInfo = {};
+    for(let c=0;c<cols;c++){
+      const survivors = [];
+      for(let r=rows-1;r>=0;r--){
+        const t = grid[r][c];
+        if (t && !toClearLine.has(keyRC(r,c))) survivors.push({ token:t, fromRow:r });
+      }
+      const spawn = rows - survivors.length;
+      let writeRow = rows - 1;
+      for(const s of survivors){
+        finalGrid[writeRow][c] = s.token;
+        fallInfo[s.token.id] = s.fromRow - writeRow;
+        writeRow--;
+      }
+      for(let r=0;r<spawn;r++){
+        const t = makeToken(colorSeedGrid[r][c]);
+        finalGrid[r][c] = t;
+        fallInfo[t.id] = r + 1;
+      }
+    }
+    return { finalGrid, fallInfo };
+  }
+
+  async function applyClearAndGravityAnimated(toClearLine, rows, cols, colorSeedGrid){
+    const emptied = grid.map((row, r)=> row.map((t, c) => toClearLine.has(keyRC(r,c)) ? null : t));
+    setGrid(emptied);
+    await sleep(CLEAR_PAUSE_MS);
+    const { finalGrid, fallInfo } = applyClearAndGravitySync(toClearLine, rows, cols, colorSeedGrid);
+    const pxPerRow = CELL + GAP;
+    const shiftInit = {};
+    Object.entries(fallInfo).forEach(([id, rows]) => { if (rows>0) shiftInit[id] = -rows * pxPerRow; });
+    setAnimShift(shiftInit);
+    setGrid(finalGrid);
+    requestAnimationFrame(()=> { setAnimShift((m)=>{ const z={...m}; Object.keys(z).forEach(k=> z[k]=0); return z; }); });
+    await sleep(FALL_MS);
+  }
+
+  async function glowFacesSequential(faces, durMs, onTick){
+    if(!faces||faces.length===0) { onPhase?.("NEUTRAL"); onPreparedChange?.(false); return; }
+    const myEpoch = cancelEpochRef.current;
+    for(let i=0;i<faces.length;i++){
+      if (cancelEpochRef.current !== myEpoch) { setGlowFaces([]); onPhase?.("NEUTRAL"); onPreparedChange?.(false); return; }
+      const pts = faces[i]?.nodes;
+      const ptsAttr = toPointsAttr(pts);
+      setGlowFaces(ptsAttr ? [{ points: pts, key: i + '-' + Date.now() }] : []);
+      await sleep(durMs);
+      if (cancelEpochRef.current !== myEpoch) { setGlowFaces([]); onPhase?.("NEUTRAL"); onPreparedChange?.(false); return; }
+      onTick?.(Array.isArray(pts) ? pts.length : 0);
+    }
+    setGlowFaces([]); onPhase?.("NEUTRAL"); onPreparedChange?.(false);
+  }
+
+  useEffect(()=>{ if (!isCPU || !active || locked) return; let stop = false;
+    const SPEED = {
+      EASY:   { plan:[500,900], click:[800,1100], extraP:0.30, extra:[200,400], tries:120, maxM:4,  W:{faces:8, inters:1, pass:1, edges:1}, budget:6 },
+      NORMAL: { plan:[350,700], click:[650,850],  extraP:0.20, extra:[150,300], tries:200, maxM:5,  W:{faces:20, inters:5, pass:2, edges:1}, budget:8 },
+      HARD:   { plan:[200,450], click:[550,650],  extraP:0.12, extra:[120,220], tries:280, maxM:6,  W:{faces:55, inters:14, pass:4, edges:2}, budget:12 },
+      SUPER_HARD: { plan:[160,340], click:[420,540], extraP:0.10, extra:[100,180], tries:360, maxM:7,  W:{faces:70, inters:18, pass:5, edges:2}, budget:14 },
+      HYPER_HARD: { plan:[120,280], click:[360,480], extraP:0.08, extra:[80,160],  tries:420, maxM:8,  W:{faces:70, inters:18, pass:5, edges:2}, budget:14 },
+    };
+    const sp = SPEED[cpuLevel] || SPEED.NORMAL;
+    const rr = (range)=> Math.floor(range[0] + Math.random()*(range[1]-range[0]));
+    async function loopOnce(){
+      if (stop) return;
+      await sleep(rr(sp.plan)); if (stop) return;
+      const plan = await planCPUMoveAsync(grid, cpuLevel, rows, cols, sp, sp.budget);
+      if (stop) return;
+      if (!plan) { await sleep(60); return; }
+      const color = grid[plan[0][0]][plan[0][1]].color;
+      setStart(plan[0]); setActiveColor(color); setPath([plan[0]]); onPhase?.("PREP"); onPreparedChange?.(true);
+      for (let i=1;i<plan.length;i++){
+        await sleep(rr(sp.click)); if (stop) return;
+        setPath(p=>[...p, plan[i]]);
+        if (Math.random()<sp.extraP && i>=2){ await sleep(rr(sp.extra)); }
+      }
+      setIsClosing(true);
+      await sleep(40);
+      await handleLoopClose();
+    }
+    (async function scheduler(){ while(active && !stop){ await loopOnce(); } })();
+    return ()=>{ stop = true; };
+  }, [isCPU, active, grid, cpuLevel, rows, cols, locked]);
+
+  const gradId = useMemo(()=> "faceGrad-" + Math.random().toString(36).slice(2), []);
+  const glowId = useMemo(()=> "glow-" + Math.random().toString(36).slice(2), []);
+
+  return (
+    <div className="relative" onContextMenu={handleContext} onMouseDown={handleOuterMouseDown} onTouchStart={handleOuterTouchStart} style={{ opacity: locked? 0.55: 1 }}>
+      <div className="mb-1 text-sm text-slate-300 flex items-center gap-2">
+        <span className="px-2 py-0.5 rounded bg-slate-800/60">{label}</span>
+        {locked && <span className="text-xs text-slate-300">入力ロック中</span>}
+      </div>
+
+      <div className="relative select-none" style={{ width: BOARD_W, height: BOARD_H }} ref={boardRef}>
+        {/* Stronger face glow */}
+        <svg className="absolute inset-0 z-0 pointer-events-none" width={BOARD_W} height={BOARD_H}>
+          <defs>
+            <filter id={glowId}>
+              <feGaussianBlur stdDeviation="18" result="blur"/>
+              <feColorMatrix type="matrix" values="1.4 0 0 0 0  0 1.4 0 0 0  0 0 1.4 0 0  0 0 0 1 0" />
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <radialGradient id={gradId} cx="50%" cy="50%" r="62%">
+              <stop offset="0%"  stopColor="white" stopOpacity="1" />
+              <stop offset="40%" stopColor="white" stopOpacity="1" />
+              <stop offset="100%" stopColor="white" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          {glowFaces.map((f,i)=> { const ptsAttr = toPointsAttr(f?.points); if (!ptsAttr) return null; return (
+            <g key={f.key || i} style={{mixBlendMode:'screen'}}>
+              <polygon points={ptsAttr} style={{ animation: `burstGlow ${glowMs/1000}s ease-out 1 forwards` }} filter={`url(#${glowId})`} fill={`url(#${gradId})`} fillOpacity={1} stroke="white" strokeOpacity={0.98} />
+              <polygon points={ptsAttr} stroke="white" strokeWidth="2" fill="none" opacity="0.9" />
+            </g>
+          ); })}
+        </svg>
+
+        {grid.map((row, r) => (
+          <React.Fragment key={r}>
+            {row.map((token, c) => {
+              if (!token) return null;
+              const isInPath = path.some(([rr, cc]) => rr === r && cc === c);
+              const isStart = start && start[0] === r && start[1] === c;
+              const canTap = canTapColor(token, r, c);
+              const { x, y } = centerSquare(r, c);
+              const shift = animShift[token.id] ?? 0;
+              const highlighted = highlightSet.has(keyRC(r,c));
+              const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
+              const handlers = isCPU ? {} : {
+                onMouseDown: (e)=>{ if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
+                onTouchStart: (e)=>{
+                  if (locked) return;
+                  if (e.touches.length === 1){
+                    setLeftDown(true); onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+                  } else if (e.touches.length === 2){
+                    e.preventDefault();
+                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                  }
+                },
+              };
+              if (isCPU) { handlers.onMouseDown = ()=>{}; }
+              return (
+                <button key={token.id} {...handlers}
+                  className={`absolute z-10 rounded-xl shadow-lg ${!isCPU ? (canTap ? "hover:brightness-110 active:scale-95" : "opacity-60 cursor-not-allowed") : ""}`}
+                  style={{
+                    left: x - CELL/2, top: y - CELL/2, width: CELL, height: CELL,
+                    backgroundColor: token.color,
+                    backgroundImage: highlighted ? `radial-gradient(circle at 50% 50%, rgba(255,255,255,${glowAlpha}) 0%, rgba(255,255,255,0) 60%)` : 'none',
+                    mixBlendMode: highlighted ? 'screen' : undefined,
+                    outline: isStart ? "3px solid #fff" : isInPath ? "3px dashed rgba(255,255,255,0.95)" : "1px solid rgba(0,0,0,0.15)",
+                    boxShadow: highlighted ? "inset 0 0 0 2px rgba(255,255,255,0.95), 0 0 14px rgba(255,255,255,0.35)" : "none",
+                    borderRadius: "12px",
+                    transform: `translateY(${shift}px)`, transition: `transform ${FALL_MS}ms ease-in`, willChange: 'transform',
+                    pointerEvents: locked ? 'none' : 'auto',
+                  }}
+                  aria-label={`r${r} c${c}`}
+                />
+              );
+            })}
+          </React.Fragment>
+        ))}
+
+        {/* path lines */}
+        <svg className="absolute inset-0 z-20 pointer-events-none" width={BOARD_W} height={BOARD_H}>
+          {segments.map((s, idx) => (<line key={idx} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="white" strokeWidth={4} strokeLinecap="round" opacity={0.98} />))}
+          {start && path.length >= 3 && (()=> { const last=path[path.length-1]; const p1=centerSquare(last[0],last[1]); const p0=centerSquare(start[0],start[1]); if (isClosing || (isCPU && path.length>=3)) return <line x1={p1.x} y1={p1.y} x2={p0.x} y2={p0.y} stroke="white" strokeWidth={4} strokeLinecap="round" opacity={0.98} />; else return <line x1={p1.x} y1={p1.y} x2={p0.x} y2={p0.y} stroke="white" strokeWidth={2} strokeDasharray="6 6" opacity={0.7} />; })()}
+        </svg>
+      </div>
+
+      <div className="mt-2 w-full">
+        <div className="h-24 overflow-y-auto space-y-1 pr-1 bg-slate-800/40 rounded-lg p-2">
+          {announcements.map((a)=> (<div key={a.id} className="text-xs bg-slate-900/60 border border-slate-700 rounded px-2 py-1">{a.text}</div>))}
+          {announcements.length===0 && (<div className="text-[11px] text-slate-400">ここに図形内訳・獲得点が流れます。</div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** =================== CPU Planner (async time-sliced) =================== */
+async function planCPUMoveAsync(grid, level, rows, cols, spCfg, timeBudgetMs=8){
+  const startTs = performance.now();
+  const byColor = new Map();
+  for (let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const t = grid[r][c]; if (!t) continue;
+      const arr = byColor.get(t.color) || [];
+      arr.push([r,c]); byColor.set(t.color, arr);
+    }
+    if (performance.now()-startTs>timeBudgetMs) await sleep(0);
+  }
+  const colors = [...byColor.keys()]; if (colors.length===0) return null;
+  let chosenColors;
+  if (level === "EASY") { chosenColors = [colors[randInt(colors.length)], ...colors]; }
+  else { const sorted = [...byColor.entries()].sort((a,b)=> b[1].length - a[1].length).map(([c])=>c); chosenColors = sorted; }
+
+  const tries = spCfg?.tries ?? 200, maxM = spCfg?.maxM ?? 5, minM=3;
+  const w = spCfg?.W ?? {faces:20, inters:5, pass:2, edges:1};
+
+  function evalOrder(path){
+    const pts = path.map(([r,c])=> centerSquare(r,c));
+    const g = buildGraph(pts);
+    const faces = g.faces.length;
+    const segs = []; for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length]; segs.push({a,b}); }
+    let inters = 0; for(let i=0;i<segs.length;i++){ for(let j=i+1;j<segs.length;j++){ if (Math.abs(i-j)<=1 || (i===0 && j===segs.length-1)) continue; if (segSegIntersect(segs[i].a,segs[i].b,segs[j].a,segs[j].b)) inters++; } }
+    const toClear = new Set();
+    for(let i=0;i<path.length;i++){
+      const [r1,c1]=path[i], [r2,c2]=path[(i+1)%path.length];
+      const cand = bresenhamCells(r1,c1,r2,c2);
+      for(const [rr,cc] of cand){
+        if (rr<0||rr>=rows||cc<0||cc>=cols) continue;
+        const tok = grid[rr][cc];
+        if(!tok) continue;
+        if (tokenHitBySegment(r1,c1,r2,c2,rr,cc)) toClear.add(keyRC(rr,cc));
+      }
+      toClear.add(keyRC(r1,c1)); toClear.add(keyRC(r2,c2));
+    }
+    const edgesSum = pts.length;
+    const score = w.faces*(faces*faces) + w.inters*inters + w.pass*(toClear.size) + w.edges*edgesSum;
+    return { score, faces, inters };
+  }
+
+  function centroid(list){ let sx=0, sy=0; for(const [r,c] of list){ sx+=r; sy+=c; } return [sx/list.length, sy/list.length]; }
+  function orderCandidates(list){
+    const ctr = centroid(list);
+    const byAng = [...list].sort((a,b)=> Math.atan2(a[0]-ctr[0], a[1]-ctr[1]) - Math.atan2(b[0]-ctr[0], b[1]-ctr[1]));
+    const n = byAng.length; const cands = [];
+    if (n>=3) cands.push(byAng);
+    if (n>=4) { const half=Math.floor(n/2); const A=byAng.slice(0,half), B=byAng.slice(half); const zig=[]; const L=Math.max(A.length,B.length); for(let i=0;i<L;i++){ if (i<A.length) zig.push(A[i]); if (i<B.length) zig.push(B[i]); } if (zig.length===n) cands.push(zig); }
+    if (n>=5) { const steps=[2,3,Math.floor(n/2)-1].filter(k=> k>0 && k<n); for(const k of steps){ if (gcd(n,k)!==1) continue; const ord=[]; let i=0; for(let t=0;t<n;t++){ ord.push(byAng[i]); i=(i+k)%n; } if (ord.length===n) cands.push(ord); } }
+    if (n>=4){ const rand=[...byAng]; for(let i=rand.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const tmp=rand[i]; rand[i]=rand[j]; rand[j]=tmp; } cands.push(rand); }
+    const seen=new Set(), out=[]; for(const arr of cands){ const key=arr.map(x=>x.join(':')).join('|'); if(!seen.has(key)){ seen.add(key); out.push(arr); } } return out;
+  }
+
+  let best=null;
+  for (const col of chosenColors){
+    const pts=byColor.get(col); if (!pts || pts.length<minM) continue;
+    const localTries = Math.min(tries, 40 + Math.floor(pts.length*1.5));
+    for (let t=0;t<localTries;t++){
+      if (performance.now() - startTs > timeBudgetMs){ await sleep(0); timeBudgetMs += 6; }
+      const m=Math.min(maxM, Math.max(minM, 3 + Math.floor(Math.random()*(maxM-2))));
+      const chosen = sampleDistinct(pts, m); if (!chosen) continue;
+      for (const order of orderCandidates(chosen)){
+        const ev = evalOrder(order);
+        if (!best || ev.score > best.ev?.score){ best = { path: order, ev }; }
+      }
+      if ((t & 7) === 7) await sleep(0);
+    }
+    if (level!=="HARD" && level!=="SUPER_HARD" && level!=="HYPER_HARD" && best) break;
+    if (performance.now() - startTs > timeBudgetMs + 12) break;
+  }
+  return best?.path || null;
+}
+function sampleDistinct(arr, m){ if (arr.length<m) return null; const idxs=new Set(); while(idxs.size<m) idxs.add(Math.floor(Math.random()*(arr.length))); return [...idxs].map(i=>arr[i]); }
+function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
+
+/** =================== App =================== */
+function VersusSprites(){
+  const [rows, setRows] = useState(DEFAULT_ROWS);
+  const [cols, setCols] = useState(DEFAULT_COLS);
+  const [colorCount, setColorCount] = useState(5);
+
+  const [seed, setSeed] = useState(()=> Math.floor(Math.random()*1e9));
+
+  const [customStr, setCustomStr] = useState("");
+  const [customGrid, setCustomGrid] = useState(null);
+
+  const colorSeed = useMemo(()=> {
+    if (customGrid) return customGrid;
+    return colorsSeedGrid(seed, rows, cols, colorCount);
+  }, [seed, rows, cols, colorCount, customGrid]);
+
+  const [running, setRunning] = useState(false);
+  const [deadline, setDeadline] = useState(null);
+  const [remaining, setRemaining] = useState(DURATION_MS);
+  const [cpuLevel, setCpuLevel] = useState("NORMAL");
+  const [cpuSuperOn, setCpuSuperOn] = useState(false);
+  const [itemsEnabled, setItemsEnabled] = useState(false);
+  const [showDamage, setShowDamage] = useState(true);
+
+  const pScoreRef = useRef(0); const cScoreRef = useRef(0);
+
+  const [hpMax, setHpMax] = useState(1200);
+  const [pHP, setPHP] = useState(hpMax);
+  const [cHP, setCHP] = useState(hpMax);
+
+  const [pState, _setPState] = useState('NEUTRAL');
+  const [cState, _setCState] = useState('NEUTRAL');
+  const [pAtkIdx, setPAtkIdx] = useState(0);
+  const [cAtkIdx, setCAtkIdx] = useState(1);
+  const pPostureRef = useRef('NEUTRAL');
+  const cPostureRef = useRef('NEUTRAL');
+  const pViewRef = useRef('NEUTRAL');
+  const cViewRef = useRef('NEUTRAL');
+  const [glowMs, setGlowMs] = useState(180);
+
+  const [clashFlash, setClashFlash] = useState(false);
+  const [clashXY, setClashXY] = useState(null);
+  const [pFloats, setPFloats] = useState([]); const [cFloats, setCFloats] = useState([]);
+  const [pRings, setPRings] = useState([]); const [cRings, setCRings] = useState([]);
+  const [pPrep, setPPrep] = useState(false); const [cPrep, setCPrep] = useState(false);
+  const pPrepRef = useRef(false); const cPrepRef = useRef(false);
+
+  const [pPlans, setPPlans] = useState([]);
+  const [cPlans, setCPlans] = useState([]);
+
+  const [pPlannedHits, setPPlannedHits] = useState(0);
+  const [cPlannedHits, setCPlannedHits] = useState(0);
+
+  const [pSuper, setPSuper] = useState(0);
+  const [pSuperReady, setPSuperReady] = useState(false);
+  const [pSuperColor, setPSuperColor] = useState(null);
+  const [pPalette, setPPalette] = useState([]);
+
+  const [cSuper, setCSuper] = useState(0);
+  const [cSuperReady, setC_SUPER_READY] = useState(false);
+
+  const [pCancelSig, setPCancelSig] = useState(0);
+  const [cCancelSig, setCCancelSig] = useState(0);
+
+  const queuesRef = useRef({ P: [], C: [] });
+  const activeRef = useRef({ P: null, C: null });
+
+  const lastAtkRef = useRef({ P: -1, C: -1 });
+
+  const [pStreak, setPStreak] = useState(0);
+  const [cStreak, setCStreak] = useState(0);
+  const [pBanner, setPBanner] = useState(null);
+  const [cBanner, setCBanner] = useState(null);
+
+  const [pBarrierUntil, setPBarrierUntil] = useState(0);
+  const [cBarrierUntil, setCBarrierUntil] = useState(0);
+
+  const pBarrierUntilRef = useRef(0);
+  const cBarrierUntilRef = useRef(0);
+
+// Refs mirror barrier expiry to avoid stale-closure during queued hits
+
+  // Keep refs in sync with state
+  useEffect(()=>{ pBarrierUntilRef.current = pBarrierUntil; }, [pBarrierUntil]);
+  useEffect(()=>{ cBarrierUntilRef.current = cBarrierUntil; }, [cBarrierUntil]);
+
+  const [pLocked, setPLocked] = useState(false);
+  const [cLocked, setCLocked] = useState(false);
+
+  // === Global item (both can claim) ===
+  const [gItem, setGItem] = useState(null);
+  const claimStateRef = useRef({ itemId:null, claims:[], timer:null });
+
+  // Refs for placing clash near player's HP bar
+  const wrapRef = useRef(null);
+  const pHpBarRef = useRef(null);
+  const clashEpochRef = useRef(0);
+
+  useEffect(()=>{ if (!running) return; const id = setInterval(()=>{ const left = Math.max(0, (deadline ?? 0) - Date.now()); setRemaining(left); if (left<=0){ setRunning(false); } }, 100); return ()=> clearInterval(id); }, [running, deadline]);
+
+  // Super charge
+  useEffect(()=>{
+    if (!running) return;
+    const id = setInterval(()=>{
+      setPSuper(v=>{
+        if (pSuperReady) return v;
+        const nv = Math.min(SUPER_MAX, v + SUPER_RATE_PER_100MS);
+        if (nv>=SUPER_MAX-1e-6){
+          const pal = pPalette && pPalette.length ? pPalette : BASE5;
+          const choice = pal[Math.floor(Math.random()*pal.length)];
+          setPSuperColor(choice); setPSuperReady(true);
+        }
+        return nv;
+      });
+    }, 100);
+    return ()=> clearInterval(id);
+  }, [running, pPalette, pSuperReady]);
+  useEffect(()=>{
+    if (!running) return;
+    const id = setInterval(()=>{
+      setCSuper(v=>{
+        if (!cpuSuperOn || cSuperReady) return v;
+        const nv = Math.min(SUPER_MAX, v + SUPER_RATE_PER_100MS);
+        if (nv>=SUPER_MAX-1e-6){ setC_SUPER_READY(true); }
+        return nv;
+      });
+    }, 100);
+    return ()=> clearInterval(id);
+  }, [running, cpuSuperOn, cSuperReady]);
+
+  function setView(side, v){ if (side==='P'){ pViewRef.current=v; _setPState(v); } else { cViewRef.current=v; _setCState(v); } }
+
+  function resetFight(){
+    setPHP(hpMax); setCHP(hpMax);
+    setView('P','NEUTRAL'); setView('C','NEUTRAL');
+    setClashFlash(false); setClashXY(null);
+    setPFloats([]); setCFloats([]); setPRings([]); setCRings([]);
+    setPPrep(false); setCPrep(false); pPrepRef.current=false; cPrepRef.current=false;
+    setPPlans([]); setCPlans([]);
+    setPPlannedHits(0); setCPlannedHits(0);
+    setPSuper(0); setPSuperReady(false); setPSuperColor(null);
+    setCSuper(0); setC_SUPER_READY(false);
+    queuesRef.current={P:[], C:[]};
+    if (activeRef.current.P?.timer) clearTimeout(activeRef.current.P.timer);
+    if (activeRef.current.C?.timer) clearTimeout(activeRef.current.C.timer);
+    activeRef.current={P:null, C:null};
+    setPAtkIdx(0); setCAtkIdx(1);
+    lastAtkRef.current={P:-1, C:-1};
+    setPStreak(0); setCStreak(0); setPBanner(null); setCBanner(null);
+    clearBarriers();
+    setPLocked(false); setCLocked(false);
+    setGItem(null);
+    const st = claimStateRef.current;
+    if (st.timer) { clearTimeout(st.timer); st.timer=null; }
+    claimStateRef.current = { itemId:null, claims:[], timer:null };
+  }
+
+  function startMatch(){
+    setSeed(Math.floor(Math.random()*1e9));
+    setRemaining(DURATION_MS); setDeadline(Date.now()+DURATION_MS);
+    pScoreRef.current = 0; cScoreRef.current = 0; resetFight(); setRunning(true);
+  }
+
+  const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
+  function pushImpact(side, amount, kind){
+    const ring = { id: Date.now()+Math.random(), size: ringSizeFromDamage(amount), kind };
+    if (side==='P'){
+      setPRings(list=> [...list, ring]);
+      setTimeout(()=> setPRings(list=> list.filter(x=>x.id!==ring.id)), 420);
+    } else {
+      setCRings(list=> [...list, ring]);
+      setTimeout(()=> setCRings(list=> list.filter(x=>x.id!==ring.id)), 420);
+    }
+  }
+
+  function pushPlan(side){ const id=uid(); if (side==='P') setPPlans(arr=> [...arr, id]); else setCPlans(arr=> [...arr, id]); return id; }
+  function popPlan(side, id, popAny=false){
+    if (side==='P') setPPlans(arr=> (popAny||!id) ? arr.slice(1) : arr.filter(x=>x!==id));
+    else setCPlans(arr=> (popAny||!id) ? arr.slice(1) : arr.filter(x=>x!==id));
+  }
+
+  
+
+  function setBarrier(side, untilTs){
+    if (side==='P'){ pBarrierUntilRef.current = untilTs; setPBarrierUntil(untilTs); }
+    else { cBarrierUntilRef.current = untilTs; setCBarrierUntil(untilTs); }
+  }
+  function clearBarriers(){
+    // Reset barrier refs and state without recursion
+    pBarrierUntilRef.current = 0; 
+    cBarrierUntilRef.current = 0;
+    setPBarrierUntil(0); 
+    setCBarrierUntil(0);
+  }
+function ensureActive(side){
+    if (activeRef.current[side]) return;
+    const q = queuesRef.current[side];
+    if (q.length===0) return;
+    const entry = q.shift();
+    const nowTs = Date.now();
+    const op = side==='P' ? 'C' : 'P';
+    const opp = activeRef.current[op];
+    if (opp && Math.abs(nowTs - opp.ts) <= CLASH_WINDOW_MS){
+      clearTimeout(opp.timer); activeRef.current[op]=null;
+      doClash(entry.power, opp.power);
+      popPlan(side, entry.planId); popPlan(op, opp.planId);
+      ensureActive(side); ensureActive(op);
+      return;
+    }
+    const timer = setTimeout(()=>{
+      applySingle(side, entry.power);
+      popPlan(side, entry.planId);
+      activeRef.current[side]=null;
+      ensureActive(side);
+    }, CLASH_WINDOW_MS);
+    activeRef.current[side] = { power: entry.power, planId: entry.planId, ts: nowTs, timer };
+  }
+
+  function queueAttack(side, power){ const planId=pushPlan(side); queuesRef.current[side].push({ power, planId }); ensureActive(side); }
+  function clearAllPlans(side){
+    const act = activeRef.current[side];
+    if (act){ clearTimeout(act.timer); popPlan(side, act.planId); activeRef.current[side]=null; }
+    const q = queuesRef.current[side];
+    for (const e of q){ popPlan(side, e.planId); }
+    queuesRef.current[side] = [];
+    if (side==='P') setPPlannedHits(0); else setCPlannedHits(0);
+  }
+
+  function pickNextAttackIdx(side){
+    const last = lastAtkRef.current[side];
+    const options = [0,1,2,3].filter(x=> x!==last);
+    const idx = options[Math.floor(Math.random()*(options.length))];
+    lastAtkRef.current[side] = idx;
+    return idx;
+  }
+
+  function scalingForStreak(n){ if (n<=1) return 1; const x=n-1; return 1 + 0.12*x + 0.02*x*x; }
+  const cappedScale = (n) => Math.min(scalingForStreak(n), COMBO_SCALE_CAP);
+
+  function setTempView(target, view, ms){
+    const prev = target==='P' ? pPostureRef.current : cPostureRef.current;
+    const applyView = (view==='GUARD' && (prev==='ATTACK' || prev==='PREP')) ? prev : view;
+    if (target==='P'){ _setPState(applyView); pViewRef.current=applyView; }
+    else { _setCState(applyView); cViewRef.current=applyView; }
+    setTimeout(()=>{
+      if (target==='P'){ _setPState(prev); pViewRef.current=prev; }
+      else { _setCState(prev); cViewRef.current=prev; }
+    }, ms);
+  }
+
+  const FLASH_Y_OFFSET = 6; // px above the bar
+  const FLASH_X_OFFSET = 32; // moved further right
+
+  function placeClashAtPlayerHP(){
+    const wrap = wrapRef.current;
+    const bar = pHpBarRef.current;
+    if (!wrap || !bar) { setClashXY(null); return; }
+    const wb = wrap.getBoundingClientRect();
+    const bb = bar.getBoundingClientRect();
+    const midX = (bb.right - wb.left) + FLASH_X_OFFSET;
+    const midY = bb.top - wb.top - FLASH_Y_OFFSET;
+    setClashXY({ x: midX, y: midY });
+  }
+
+  function withTempAttack(ms=220){
+    const epoch = ++clashEpochRef.current;
+    const prevP = pPostureRef.current;
+    const prevC = cPostureRef.current;
+    _setPState('ATTACK'); pViewRef.current='ATTACK';
+    _setCState('ATTACK'); cViewRef.current='ATTACK';
+    setTimeout(()=>{
+      if (clashEpochRef.current===epoch){
+        _setPState(prevP); pViewRef.current=prevP;
+        _setCState(prevC); cViewRef.current=prevC;
+      }
+    }, ms);
+  }
+
+  function doClash(pA, pB){
+    placeClashAtPlayerHP();
+    withTempAttack(220); // keep attack pose during clash
+    setClashFlash(true);
+    setTimeout(()=>{ setClashFlash(false); setClashXY(null); }, 200);
+    const diff = pA - pB;
+    if (diff>0){
+      const op='C'; const barrier=hasBarrier(op); const amt=Math.abs(diff); const dmg=Math.ceil(amt * (barrier ? BARRIER_REDUCTION : 1));
+      pushImpact(op, dmg, barrier ? 'BARRIER' : 'HIT'); if (showDamage) pushFloat(op, dmg, barrier ? 'GUARD' : 'HIT'); damage(op, dmg);
+      if (!barrier) setTempView(op, 'HIT', HIT_STUN_MS);
+    }
+    else if (diff<0){
+      const op='P'; const barrier=hasBarrier(op); const amt=Math.abs(diff); const dmg=Math.ceil(amt * (barrier ? BARRIER_REDUCTION : 1));
+      pushImpact(op, dmg, barrier ? 'BARRIER' : 'HIT'); if (showDamage) pushFloat(op, dmg, barrier ? 'GUARD' : 'HIT'); damage(op, dmg);
+      if (!barrier) setTempView(op, 'HIT', HIT_STUN_MS);
+    }
+    setPStreak(0); setCStreak(0); setPBanner(null); setCBanner(null);
+    setPPlannedHits(v=> Math.max(0, v-1));
+    setCPlannedHits(v=> Math.max(0, v-1));
+  }
+
+  function pushFloat(side, amount, type){
+    const item = { id: Date.now()+Math.random(), text: amount, type };
+    if (side==='P') setPFloats(a=> [...a, item]); else setCFloats(a=> [...a, item]);
+    setTimeout(()=>{ if (side==='P') setPFloats(a=> a.filter(x=>x.id!==item.id)); else setCFloats(a=> a.filter(x=>x.id!==item.id)); }, 900);
+  }
+
+  function getViewState(side){ return side==='P' ? pViewRef.current : cViewRef.current; }
+  function hasBarrier(side){ return (side==='P' ? pBarrierUntilRef.current : cBarrierUntilRef.current) > Date.now(); }
+
+  function applySingle(side, basePower){
+    const op = side==='P' ? 'C' : 'P';
+    const opPosture = op==='P' ? pPostureRef.current : cPostureRef.current;
+    const barrier = hasBarrier(op);
+    const isGuard = !(opPosture==='PREP' || opPosture==='ATTACK');
+    const effectiveGuard = barrier || isGuard; // barrier counts as guard, even during PREP/ATTACK
+
+    if (effectiveGuard){
+      const dmg = Math.ceil(basePower * (barrier ? BARRIER_REDUCTION : GUARD_REDUCTION));
+      pushImpact(op, Math.max(dmg, 1), barrier ? 'BARRIER' : 'GUARD');
+      if (showDamage && dmg>0) pushFloat(op, dmg, 'GUARD');
+      damage(op, dmg);
+      if (!barrier) setTempView(op, 'GUARD', GUARD_POSE_MS);
+      if (side==='P'){ setPStreak(0); setCBanner(null); } else { setCStreak(0); setPBanner(null); }
+    } else {
+      if (side==='P'){
+        setPStreak(n=>{
+          const next = n+1;
+          const mult = cappedScale(next);
+          const dmg = Math.round(basePower * mult);
+          pushImpact(op, dmg, 'HIT'); if (showDamage) pushFloat(op, dmg, 'HIT'); damage(op, dmg);
+          setCBanner(`${next} HIT!`); setTimeout(()=> setCBanner(null), 700);
+          setTempView(op, 'HIT', HIT_STUN_MS);
+          return next;
+        });
+      } else {
+        setCStreak(n=>{
+          const next = n+1;
+          const mult = cappedScale(next);
+          const dmg = Math.round(basePower * mult);
+          pushImpact(op, dmg, 'HIT'); if (showDamage) pushFloat(op, dmg, 'HIT'); damage(op, dmg);
+          setPBanner(`${next} HIT!`); setTimeout(()=> setPBanner(null), 700);
+          setTempView(op, 'HIT', HIT_STUN_MS);
+          return next;
+        });
+      }
+    }
+    if (side==='P') setPPlannedHits(v=> Math.max(0, v-1));
+    else setCPlannedHits(v=> Math.max(0, v-1));
+  }
+
+  function damage(target, amount){
+    if (target==='P'){
+      setPHP(v=> { const nv = Math.max(0, v-amount); if (nv<=0) setRunning(false); return nv; });
+    } else {
+      setCHP(v=> { const nv = Math.max(0, v-amount); if (nv<=0) setRunning(false); return nv; });
+    }
+  }
+
+  function onPPhase(s){ _setPState(s); if (s==='NEUTRAL' || s==='PREP' || s==='ATTACK') pPostureRef.current = s; pViewRef.current=s; }
+  function onCPhase(s){ _setCState(s); if (s==='NEUTRAL' || s==='PREP' || s==='ATTACK') cPostureRef.current = s; cViewRef.current=s; }
+  function onPPrepared(v){ setPPrep(v); pPrepRef.current=v; if (v && pPostureRef.current!=='ATTACK') { pPostureRef.current='PREP'; _setPState('PREP'); pViewRef.current='PREP'; } }
+  function onCPrepared(v){ setCPrep(v); cPrepRef.current=v; if (v && cPostureRef.current!=='ATTACK') { cPostureRef.current='PREP'; _setCState('PREP'); cViewRef.current='PREP'; } }
+  function onPAttackFrame({sides}){ _setPState('ATTACK'); pPostureRef.current = 'ATTACK'; pViewRef.current='ATTACK'; const idx = pickNextAttackIdx('P'); setPAtkIdx(idx); queueAttack('P', sides*DMG_PER_CORNER); }
+  function onCAttackFrame({sides}){ _setCState('ATTACK'); cPostureRef.current = 'ATTACK'; cViewRef.current='ATTACK'; const idx = pickNextAttackIdx('C'); setCAtkIdx(idx); queueAttack('C', sides*DMG_PER_CORNER); }
+
+  function trySuper(){
+    if (!pSuperReady || !pSuperColor) return;
+    const base = SUPER_DAMAGE;
+    _setPState('SUPER_DASH'); pViewRef.current='SUPER_DASH';
+    setTimeout(()=> { _setPState('ATTACK'); pViewRef.current='ATTACK'; }, 180);
+    const op='C'; const barrier=hasBarrier(op); const dmg=Math.ceil(base * (barrier ? BARRIER_REDUCTION : 1));
+    pushImpact(op, dmg, barrier ? 'BARRIER' : 'HIT'); if (showDamage) pushFloat(op, dmg, barrier ? 'GUARD' : 'HIT'); damage(op, dmg);
+    clearAllPlans('C'); setCCancelSig(v=> v+1);
+    setPSuper(0); setPSuperReady(false); setPSuperColor(null);
+    setCLocked(true); setTimeout(()=> setCLocked(false), SUPER_LOCK_MS);
+    if (!barrier) setTempView(op, 'HIT', HIT_STUN_MS);
+  }
+
+  useEffect(()=>{
+    if (!running || !cpuSuperOn || !cSuperReady) return;
+    const fire = () => {
+      const dmg = SUPER_DAMAGE;
+      _setCState('SUPER_DASH'); cViewRef.current='SUPER_DASH'; setTimeout(()=> { _setCState('ATTACK'); cViewRef.current='ATTACK'; }, 180); const op='P'; const barrier=hasBarrier(op); const dmgEff=Math.ceil(dmg * (barrier ? BARRIER_REDUCTION : 1)); pushImpact(op, dmgEff, barrier ? 'BARRIER' : 'HIT'); if (showDamage) pushFloat(op, dmgEff, barrier ? 'GUARD' : 'HIT'); damage('P', dmgEff);
+      if (!barrier) setTempView('P', 'HIT', HIT_STUN_MS);
+      clearAllPlans('P'); setPCancelSig(v=> v+1);
+      setCSuper(0); setC_SUPER_READY(false);
+      setPLocked(true); setTimeout(()=> setPLocked(false), SUPER_LOCK_MS);
+      setTempView('P', 'HIT', HIT_STUN_MS);
+    };
+    if (pPostureRef.current==='PREP' || pPostureRef.current==='ATTACK'){ fire(); }
+    else {
+      const timer = setTimeout(()=> fire(), 1200);
+      const watch = setInterval(()=>{ if (pPostureRef.current==='PREP' || pPostureRef.current==='ATTACK'){ clearTimeout(timer); clearInterval(watch); fire(); } }, 120);
+      return ()=> { clearTimeout(timer); clearInterval(watch); };
+    }
+  }, [running, cpuSuperOn, cSuperReady, showDamage]);
+
+  function onPlayerSuperTriangle({ color }){ if (pSuperReady && pSuperColor && color && color.toLowerCase() === pSuperColor.toLowerCase()){ trySuper(); } }
+
+  // Items spawn (square-only) favoring disadvantaged player WHEN advantaged is drawing;
+  // but claim is first-come-wins (shared global item).
+  useEffect(()=>{
+    if (!running || !itemsEnabled) return;
+    const timer = setInterval(()=>{
+      if (gItem) return;
+      const pLead = pHP - cHP;
+      if (pLead === 0) return;
+      const advantaged = pLead>0 ? 'P' : 'C';
+      const drawing = (advantaged==='P' ? pPostureRef.current : cPostureRef.current) === 'PREP';
+      if (!drawing) return;
+      const type = Math.random()<0.5 ? "HEAL" : "BARRIER";
+      const item = { id: uid(), type, markSides: 4, claimed: false };
+      setGItem(item);
+      const st = claimStateRef.current;
+      if (st.timer) { clearTimeout(st.timer); }
+      claimStateRef.current = { itemId:item.id, claims:[], timer:null };
+    }, ITEM_CHECK_MS);
+    return ()=> clearInterval(timer);
+  }, [running, itemsEnabled, pHP, cHP, gItem]);
+
+  function finalizeItemClaim(){
+    const st = claimStateRef.current;
+    if (!gItem || !st || st.itemId !== gItem.id || gItem.claimed) return;
+    let chosen = null;
+    if (st.claims.length===1) chosen = st.claims[0].side;
+    else if (st.claims.length>=2) {
+      const [a,b] = st.claims;
+      const dt = Math.abs(a.ts - b.ts);
+      if (dt<=24) chosen = Math.random()<0.5 ? a.side : b.side; // 同時→ランダム
+      else chosen = (a.ts < b.ts ? a.side : b.side); // 先着
+    }
+    if (!chosen) return;
+    const item = { ...gItem, claimed:true };
+    setGItem(null);
+    claimStateRef.current = { itemId:null, claims:[], timer:null };
+    if (item.type==='HEAL'){
+      if (chosen==='P') setPHP(v=> Math.min(hpMax, Math.round(v + hpMax*HEAL_FRAC)));
+      else setCHP(v=> Math.min(hpMax, Math.round(v + hpMax*HEAL_FRAC)));
+    } else {
+      if (chosen==='P') setBarrier('P', Date.now() + BARRIER_MS);
+      else setBarrier('C', Date.now() + BARRIER_MS);
+    }
+  }
+
+  function tryClaim(side, item){
+    if (!item || !gItem || item.id !== gItem.id || gItem.claimed) return;
+    const st = claimStateRef.current;
+    const now = performance.now();
+    st.claims.push({ side, ts: now });
+    if (!st.timer){
+      st.timer = setTimeout(()=>{
+        finalizeItemClaim();
+      }, 24);
+    } else {
+      finalizeItemClaim();
+    }
+  }
+
+  // Winner
+  const hpKO = pHP<=0 || cHP<=0;
+  const finished = (!running && remaining===0) || hpKO;
+  const winner = finished ? ( pHP>cHP ? "YOU WIN!" : pHP<cHP ? "CPU WINS!" : "DRAW" ) : null;
+
+  // Modal visibility (can dismiss by outside click or Esc)
+  const [showWinModal, setShowWinModal] = useState(false);
+  useEffect(()=>{ if (winner) setShowWinModal(true); else setShowWinModal(false); }, [winner]);
+  useEffect(()=>{
+    if (!showWinModal) return;
+    function onKey(e){ if (e.key === 'Escape') setShowWinModal(false); }
+    window.addEventListener('keydown', onKey);
+    return ()=> window.removeEventListener('keydown', onKey);
+  }, [showWinModal]);
+
+  function colorSwatchStyle(c){ return { background: c, width: 14, height: 14, borderRadius: 3, border: '1px solid rgba(255,255,255,0.7)' }; }
+
+  const secs = Math.ceil(remaining/1000);
+
+  // === Custom matrix parser ===
+  function parseCustom(str){
+    const lines = str.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    const rowsL = lines.length;
+    const colsL = Math.max(...lines.map(l => l.split(/[\s,]+/).filter(Boolean).length));
+    if (rowsL<3 || colsL<3 || rowsL>14 || colsL>12) return null;
+    const pal = paletteFromSeed(seed, Math.min(colorCount, MAX_COLORS));
+    const out = [];
+    for (let r=0;r<rowsL;r++){
+      const cells = lines[r].split(/[\s,]+/).filter(Boolean);
+      const row = [];
+      for (let c=0;c<colsL;c++){
+        const t = cells[c] ?? cells[cells.length-1];
+        if (!t) { row.push(pal[(r+c)%pal.length]); continue; }
+        if (t.startsWith("#") && t.length>=4){ row.push(t); }
+        else {
+          const idx = Math.max(0, Math.min(pal.length-1, parseInt(t,10) || 0));
+          row.push(pal[idx]);
+        }
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  // Safety watchdog: fix rare "attack pose stuck while neutral" by ensuring consistency
+  useEffect(()=>{
+    if (!running) return;
+    const id = setInterval(()=>{
+      ['P','C'].forEach(side => {
+        const post = side==='P' ? pPostureRef.current : cPostureRef.current;
+        const view = side==='P' ? pViewRef.current : cViewRef.current;
+        if (post==='NEUTRAL' && (view==='ATTACK' || view==='SUPER_DASH')){
+          if (side==='P'){ _setPState('NEUTRAL'); pViewRef.current='NEUTRAL'; }
+          else { _setCState('NEUTRAL'); cViewRef.current='NEUTRAL'; }
+        }
+      });
+    }, 400);
+    return ()=> clearInterval(id);
+  }, [running]);
+
+  return (
+    <div className="w-full min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center py-6">
+      <div className="w-full max-w-6xl px-4 mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold">LoopLines – Versus (99s) v1.08h</h1>
+
+        <div className="ml-2 flex items-center gap-2 text-sm">
+          <label htmlFor="glowSpeed" className="opacity-80">面発光スピード</label>
+          <input id="glowSpeed" type="range" min={60} max={360} step={10} value={glowMs} onChange={e=> setGlowMs(Number(e.target.value))} />
+          <span className="tabular-nums w-14 text-right">{glowMs}ms</span>
+        </div>
+
+        <div className="ml-2 flex items-center gap-2 text-sm">
+          <label htmlFor="hpMax" className="opacity-80">体力</label>
+          <input id="hpMax" type="range" min={300} max={6000} step={100} value={hpMax} onChange={e=> setHpMax(Number(e.target.value))} disabled={running} />
+          <span className="tabular-nums w-16 text-right">{hpMax}</span>
+        </div>
+
+        <div className="ml-2 flex items-center gap-2 text-sm">
+          難易度:
+          <select className="bg-slate-800 border border-slate-700 rounded px-2 py-1" value={cpuLevel} onChange={e=> setCpuLevel(e.target.value)} disabled={running}>
+            <option value="EASY">EASY</option>
+            <option value="NORMAL">NORMAL</option>
+            <option value="HARD">HARD</option>
+            <option value="SUPER_HARD">SUPER HARD</option>
+            <option value="HYPER_HARD">HYPER HARD</option>
+          </select>
+        </div>
+
+        <label className="ml-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={cpuSuperOn} onChange={(e)=> setCpuSuperOn(e.target.checked)} />
+          CPU Super
+        </label>
+
+        <label className="ml-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={itemsEnabled} onChange={(e)=> setItemsEnabled(e.target.checked)} />
+          アイテム
+        </label>
+
+        <label className="ml-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showDamage} onChange={(e)=> setShowDamage(e.target.checked)} />
+          DMG表示
+        </label>
+
+        <button onClick={startMatch} className="ml-3 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm disabled:opacity-50" disabled={running}>Start 99s</button>
+        <div className="ml-auto text-lg font-mono">{String(secs).padStart(2, "0")}<span className="text-sm opacity-70">s</span></div>
+      </div>
+
+      <div className="w-full max-w-6xl px-4 mb-2 grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+        <div className="flex justify-center">
+          <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
+                 colorSeedGrid={colorSeed}
+                 onScore={(d)=> (pScoreRef.current += d)} exposeScoreRef={pScoreRef}
+                 onPhase={onPPhase} onAttackFrame={onPAttackFrame} onPreparedChange={onPPrepared}
+                 onPalette={setPPalette} onSuperTriangle={onPlayerSuperTriangle}
+                 onPlannedHits={({hits})=> setPPlannedHits(hits)}
+                 onItemClaim={(it)=> tryClaim('P', it)} item={gItem} itemsEnabled={itemsEnabled}
+                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={pCancelSig} locked={pLocked} showDamage={showDamage} />
+        </div>
+
+        {/* Center area; clash placed near Player HP bar right edge (+offset) */}
+        <div className="xl:col-span-2">
+          <div ref={wrapRef} className="relative w-full h-64 flex items-center justify-center gap-10">
+            {/* precise clash effect */}
+            {clashFlash && (
+              <div className="absolute pointer-events-none" style={{ left: (clashXY?.x ?? '50%'), top: (clashXY?.y ?? '50%'), transform: 'translate(-50%,-50%)' }}>
+                <div className="rounded-full" style={{ width: 120, height: 120, background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.5) 40%, rgba(255,255,255,0) 70%)', filter: 'blur(6px)', animation: 'impactPop 260ms ease-out forwards' }} />
+              </div>
+            )}
+
+            <div className={`${pState==='NEUTRAL'?'animate-[idle_1.2s_ease-in-out_infinite]':''} ${pState==='PREP'?'animate-[ready_0.9s_ease-in-out_infinite]':''} relative`}>
+              <FighterSprite side="LEFT" state={pState} attackIndex={pAtkIdx} rings={pRings} scale={1} plans={pPlannedHits} barrier={pBarrierUntil>Date.now()} showDamage={showDamage} floats={pFloats} hitBanner={pBanner} />
+              {/* HP */}
+              <div ref={pHpBarRef} className="mt-2 h-2 w-44 bg-slate-800/70 rounded-full overflow-hidden border border-slate-700">
+                <div className={`h-full ${pHP/hpMax<0.3? 'bg-red-500': pHP/hpMax<0.6? 'bg-yellow-400':'bg-emerald-500'}`} style={{ width: `${Math.max(0, Math.round(100*pHP/hpMax))}%`, transition: 'width 160ms linear' }} />
+              </div>
+              {/* Super bar + indicator */}
+              <div className="mt-1 w-44 relative">
+                <div className="h-2 w-full bg-slate-800/70 rounded-full overflow-hidden border border-slate-700">
+                  <div className="h-full bg-fuchsia-500" style={{ width: `${Math.min(100, Math.round(pSuper))}%`, transition: 'width 120ms linear' }} />
+                </div>
+                {pSuperReady && pSuperColor && (
+                  <div className="absolute -right-6 -top-2 flex flex-col items-center gap-1 pointer-events-none">
+                    <div style={{ width:0, height:0, borderLeft:'6px solid transparent', borderRight:'6px solid transparent', borderBottom:'10px solid #fff' }} />
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-slate-300">×</span>
+                      <div style={colorSwatchStyle(pSuperColor)} title={pSuperColor}></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={`${cState==='NEUTRAL'?'animate-[idle_1.2s_ease-in-out_infinite]':''} ${cState==='PREP'?'animate-[ready_0.9s_ease-in-out_infinite]':''} relative`}>
+              <FighterSprite side="RIGHT" state={cState} attackIndex={cAtkIdx} rings={cRings} scale={1} plans={cPlannedHits} barrier={cBarrierUntil>Date.now()} showDamage={showDamage} floats={cFloats} hitBanner={cBanner} />
+              <div className="mt-2 h-2 w-44 bg-slate-800/70 rounded-full overflow-hidden border border-slate-700">
+                <div className={`h-full ${cHP/hpMax<0.3? 'bg-red-500': cHP/hpMax<0.6? 'bg-yellow-400':'bg-emerald-500'}`} style={{ width: `${Math.max(0, Math.round(100*cHP/hpMax))}%`, transition: 'width 160ms linear' }} />
+              </div>
+              {/* CPU super bar (no indicator) */}
+              <div className="mt-1 h-2 w-44 bg-slate-800/70 rounded-full overflow-hidden border border-slate-700 relative">
+                <div className="h-full" style={{ background: cpuSuperOn?'#38bdf8':'#475569', width: `${Math.min(100, Math.round(cSuper))}%`, transition: 'width 120ms linear' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Items row (center, shared) */}
+          {itemsEnabled && gItem && (
+            <div className="mt-3 w-full flex justify-center">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-md border border-slate-300/70 flex items-center justify-center">
+                  <svg width="18" height="18"><rect x="2" y="2" width="14" height="14" stroke="white" fill="none"/></svg>
+                </div>
+                <span className="text-xs text-slate-300">{gItem.type==='HEAL'?'HP回復':'バリア'}（四角で取得／早い者勝ち）</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-center">
+          <Board label={`CPU (${cpuLevel})`} isCPU={true} cpuLevel={cpuLevel} active={running}
+                 colorSeedGrid={colorSeed}
+                 onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
+                 onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
+                 onPalette={()=>{}} onSuperTriangle={()=>{}}
+                 onPlannedHits={({hits})=> setCPlannedHits(hits)}
+                 onItemClaim={(it)=> tryClaim('C', it)} item={gItem} itemsEnabled={itemsEnabled}
+                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={cCancelSig} locked={cLocked} showDamage={showDamage} />
+        </div>
+      </div>
+
+      {/* Black modal win window with Rematch Yes/No; dismissible by outside click or Esc */}
+      {showWinModal && winner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={()=> setShowWinModal(false)}></div>
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e)=> e.stopPropagation()}>
+            <div className="text-center text-2xl font-bold mb-2">{winner}</div>
+            <div className="text-center text-sm text-slate-300 mb-4">Rematchしますか？</div>
+            <div className="flex justify-center gap-3">
+              <button onClick={()=> { setShowWinModal(false); startMatch(); }} className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500">Yes</button>
+              <button onClick={()=> setShowWinModal(false)} className="px-4 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600">No</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full max-w-6xl px-4 mt-2">
+        <div className="bg-slate-800/60 rounded-2xl p-3 text-sm flex items-center gap-4">
+          <div>PLAYER: <b>{pScoreRef.current}</b></div>
+          <div>CPU: <b>{cScoreRef.current}</b></div>
+          {winner && <div className="ml-auto text-emerald-300 font-semibold">{winner}</div>}
+        </div>
+
+        <div className="w-full mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="flex items-center gap-2">Rows
+              <input type="number" min="6" max="14" value={rows} onChange={e=> { const v=Math.max(6, Math.min(14, Number(e.target.value)||DEFAULT_ROWS)); setRows(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
+            </label>
+            <label className="flex items-center gap-2">Cols
+              <input type="number" min="6" max="12" value={cols} onChange={e=> { const v=Math.max(6, Math.min(12, Number(e.target.value)||DEFAULT_COLS)); setCols(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
+            </label>
+            <label className="flex items-center gap-2">Colors
+              <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
+            </label>
+            <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
+          </div>
+
+          {/* Token matrix (custom) */}
+          <div className="bg-slate-800/50 rounded-xl p-3">
+            <div className="text-xs mb-2 text-slate-300">トークン行列設定（行ごとに半角スペース/カンマ区切り。<b>#hex</b> か <b>数字(0…)</b>でパレットインデックス）</div>
+            <textarea className="w-full h-24 bg-slate-900 border border-slate-700 rounded p-2 font-mono text-xs" value={customStr} onChange={e=> setCustomStr(e.target.value)} placeholder="#EF4444 #F59E0B #10B981 ...\n0 1 2 3 4 0 1 2 ..." />
+            <div className="mt-2 flex gap-2">
+              <button className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-500" onClick={()=>{
+                const g = parseCustom(customStr);
+                if (g){ setCustomGrid(g); setRows(g.length); setCols(g[0].length); }
+                else alert('行列パースに失敗：サイズは 3～14 x 3～12。形式を確認してください。');
+              }}>反映</button>
+              <button className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600" onClick={()=>{ setCustomGrid(null); setCustomStr(""); }}>クリア</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 text-xs text-slate-400">
+          画像は埋め込んでいません。HTMLと同じフォルダに neutral.png / guard.png / ready.png / up.png / down.png / thrust.png / kick.png / hurt.png を置いてください。<br/>
+          file:// で読み込めない場合は簡易サーバ（python -m http.server など）で開いてください。
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<VersusSprites />);
+</script>
+  <script src="client_online_adapter_snippet.js"></script>
+</body></html>
