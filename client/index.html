@@ -953,7 +953,28 @@ function VersusSprites(){
     setRemaining(DURATION_MS); setDeadline(Date.now()+DURATION_MS);
     pScoreRef.current = 0; cScoreRef.current = 0; resetFight(); setRunning(true);
   }
+  
+  window.__applyStartMatch = (payload)=>{
+    const { seed: s, rows: rr, cols: cc, colors: kk } = payload || {};
 
+    // 盤面サイズや色数を先に反映（存在するsetterだけ呼ぶ）
+    if (Number.isFinite(rr) && typeof setRows === 'function') setRows(rr);
+    if (Number.isFinite(cc) && typeof setCols === 'function') setCols(cc);
+    if (Number.isFinite(kk) && typeof setColorCount === 'function') setColorCount(kk);
+
+    // ランダムではなく配信された seed で開始
+    setSeed(s ?? Math.floor(Math.random()*1e9));
+    setRemaining(DURATION_MS);
+    setDeadline(Date.now() + DURATION_MS);
+    pScoreRef.current = 0;
+    cScoreRef.current = 0;
+    resetFight();
+    setRunning(true);
+
+    // （任意）CPU戦フラグがあるなら無効化
+    // if (typeof setCpuEnabled === 'function') setCpuEnabled(false);
+  };
+  
   const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
   function pushImpact(side, amount, kind){
     const ring = { id: Date.now()+Math.random(), size: ringSizeFromDamage(amount), kind };
