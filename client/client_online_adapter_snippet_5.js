@@ -1,4 +1,7 @@
-// client_online_adapter_snippet.js (singleton + auto-WS + room-full handling)
+// client_online_adapter_snippet.js (singleton, auto-connect once, auto-WS)
+// - Reads ?ws= and ?room=
+// - Connects only once per page (prevents double-join -> room_full)
+// - Applies 'start'/'state' by default if hooks exist
 (function(){
   const U = new URL(location.href);
   const ROOM = U.searchParams.get('room');
@@ -12,27 +15,32 @@
     return proto + '//localhost:8080';
   }
 
-  let ws=null, myId=null, roomId=null;
-  let connected=false;
+  function warmup(){
+    try{
+      const wsurl = getWSURL();
+      const httpURL = wsurl.replace(/^wss:/,'https:').replace(/^ws:/,'http:');
+      const u = new URL(httpURL);
+      fetch(u.origin + '/', { mode: 'no-cors' }).catch(()=>{});
+    }catch(e){}
+  }
 
-  function canSend(){ return ws && ws.readyState === 1; }
+  let ws=null, myId=null, roomId=null;
+  let connected=false, everConnected=false;
+
+  function canSend(){ return ws && ws.readyState === 1; } // OPEN
 
   function ensureSingleConnect(room){
+    // If a socket exists and is CONNECTING(0) or OPEN(1), do nothing
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return true;
     roomId = room;
     const url = getWSURL();
     console.log('[Net] connecting to', url, 'room=', roomId);
-    // wake Render (ignore result)
-    try{
-      const httpURL = url.replace(/^wss:/,'https:').replace(/^ws:/,'http:');
-      const u = new URL(httpURL); fetch(u.origin + '/', { mode:'no-cors' }).catch(()=>{});
-    }catch(_){}
-
+    warmup();
     ws = new WebSocket(url);
     window.Net._ws = ws;
 
     ws.onopen = () => {
-      connected = true;
+      connected = true; everConnected = true;
       try { ws.send(JSON.stringify({ type:'join', room: roomId })); } catch {}
     };
     ws.onmessage = (ev) => {
@@ -44,6 +52,7 @@
         try { ws.close(1001, 'room_full'); } catch {}
         return;
       }
+      // Default apply for start/state if no custom handler
       if (!window.Net.onMessage){
         if (m.type === 'start' && window.__applyStartMatch){ window.__applyStartMatch(m.payload); return; }
         if (m.type === 'state' && window.__applyState){ window.__applyState(m.payload); return; }
@@ -62,12 +71,13 @@
     ready: (v)=> { if (canSend()) try { ws.send(JSON.stringify({ type:'ready', value: !!v })); } catch {} },
     sendCmd: (cmd)=> { if (canSend()) try { ws.send(JSON.stringify({ type:'cmd', cmd })); } catch {} },
     isConnected: ()=> connected,
+    hasEverConnected: ()=> everConnected,
     myId: ()=> myId,
     onMessage: null,
-    _ws: null,
-    _id: null
+    _ws: null
   };
 
+  // Auto-connect once when ?room= is present (no duplicate calls)
   if (ROOM){ ensureSingleConnect(ROOM); }
 
   console.log('[Net] singleton adapter loaded.');

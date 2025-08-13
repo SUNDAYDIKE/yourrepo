@@ -1,31 +1,33 @@
-// server_ws_relay.js (Render-ready: HTTP healthcheck + WS bound to PORT)
+// server_ws_relay.js（Render向け最小修正）
 import http from 'http';
 import { WebSocketServer } from 'ws';
 
-// HTTP server for Render health check
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('ok');
+  res.end('ok');                    // ← RenderのHTTPヘルスチェック用
 });
 
-// Bind WebSocket to same HTTP server
+// 既存の WebSocketServer は「ポート番号」ではなく HTTPサーバにぶら下げる
 const wss = new WebSocketServer({ server });
 
-// Listen on Render's PORT
-const PORT = Number(process.env.PORT || 8080);
+const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 server.listen(PORT, () => console.log('[relay] listening on', PORT));
 
-// --- Minimal 2-player room relay ---
-const rooms = new Map(); // Map<roomId, Map<clientId, ws>>
+
+// server_ws_relay.js (ESM)
+//import { WebSocketServer } from 'ws';
+
+//const wss = new WebSocketServer({ port: process.env.PORT ? Number(process.env.PORT) : 8080 });
+//console.log('[relay] listening on', wss.options.port);
+
+const rooms = new Map(); // roomId -> Map<clientId, ws>
 let nextId = 1;
 
 function broadcast(roomId, msg){
   const r = rooms.get(roomId); if (!r) return;
   const data = JSON.stringify(msg);
-  for (const [, ws] of r){
-    if (ws.readyState === ws.OPEN){
-      try { ws.send(data); } catch {}
-    }
+  for (const [id, ws] of r){
+    if (ws.readyState === ws.OPEN){ ws.send(data); }
   }
 }
 
@@ -41,14 +43,10 @@ wss.on('connection', (ws) => {
       if (!roomId) return;
       if (!rooms.has(roomId)) rooms.set(roomId, new Map());
       const r = rooms.get(roomId);
-      if (r.size >= 2){
-        try { ws.send(JSON.stringify({ type:'error', error:'room_full' })); } catch {}
-        try { ws.close(1001, 'room_full'); } catch {}
-        return;
-      }
+      if (r.size >= 2) { ws.send(JSON.stringify({ type:'error', error:'room_full' })); return; }
       r.set(ws._id, ws);
       ws._room = roomId;
-      try { ws.send(JSON.stringify({ type:'joined', id: ws._id })); } catch {}
+      ws.send(JSON.stringify({ type:'joined', id: ws._id }));
       return;
     }
 
@@ -62,13 +60,12 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', ()=>{
     const roomId = ws._room;
     if (!roomId) return;
     const r = rooms.get(roomId);
     if (!r) return;
     r.delete(ws._id);
-    try { broadcast(roomId, { type:'peer_leave', id: ws._id }); } catch {}
     if (r.size === 0) rooms.delete(roomId);
   });
 });
