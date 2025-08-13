@@ -1,8 +1,24 @@
-// server_ws_relay.js (ESM)
+// server_ws_relay.js（Render向け最小修正）
+import http from 'http';
 import { WebSocketServer } from 'ws';
 
-const wss = new WebSocketServer({ port: process.env.PORT ? Number(process.env.PORT) : 8080 });
-console.log('[relay] listening on', wss.options.port);
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('ok');                    // ← RenderのHTTPヘルスチェック用
+});
+
+// 既存の WebSocketServer は「ポート番号」ではなく HTTPサーバにぶら下げる
+const wss = new WebSocketServer({ server });
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
+server.listen(PORT, () => console.log('[relay] listening on', PORT));
+
+
+// server_ws_relay.js (ESM)
+//import { WebSocketServer } from 'ws';
+
+//const wss = new WebSocketServer({ port: process.env.PORT ? Number(process.env.PORT) : 8080 });
+//console.log('[relay] listening on', wss.options.port);
 
 const rooms = new Map(); // roomId -> Map<clientId, ws>
 let nextId = 1;
