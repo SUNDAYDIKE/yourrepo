@@ -49,5 +49,5 @@
     myId: ()=> myId
   };
 
-  console.log('[Net] adapter loaded. Example: Net.connect(\"ROOM1\"); Net.start({seed,rows,cols,colors});');
+  console.log('[Net] adapter loaded. Example: Net.connect("ROOM1"); Net.start({seed,rows,cols,colors});');
 })();
