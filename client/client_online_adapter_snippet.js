@@ -1,30 +1,53 @@
-// client_online_adapter_snippet.js (updated)
+// client_online_adapter_snippet.js (patched: adds Net.start, warmup, isConnected)
 (function(){
   const WS_URL = (window.NET_WS_URL || 'ws://localhost:8080');
-  let ws, myId=null, role='GUEST', roomId=null;
+  let ws, myId=null, roomId=null, connected=false;
+
+  function warmup(){
+    try{
+      if (!window.NET_WS_URL) return;
+      const httpURL = window.NET_WS_URL.replace(/^wss:/,'https:').replace(/^ws:/,'http:');
+      const u = new URL(httpURL);
+      // Wake Render free instance (ignore result)
+      fetch(u.origin + '/', { mode: 'no-cors' }).catch(()=>{});
+    }catch(e){/* ignore */}
+  }
 
   window.Net = {
     connect: (room)=>{
       roomId = room;
+      warmup();
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => ws.send(JSON.stringify({ type: 'join', room: roomId }));
+      ws.onopen = () => {
+        connected = true;
+        window.Net._connected = true;
+        try { ws.send(JSON.stringify({ type: 'join', room: roomId })); } catch {}
+      };
       ws.onmessage = (ev) => {
-        const m = JSON.parse(ev.data);
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
         if (m.type === 'hello') return;
-        if (m.type === 'joined'){ myId=m.id; window.Net.onMessage && window.Net.onMessage(m); return; }
-        if (m.type === 'start' || m.type === 'cmd' || m.type === 'state' || m.type === 'peer_join' || m.type === 'peer_leave' || m.type === 'host_change'){
-          // Ignore local echo for cmd
-          if (m.type === 'cmd' && m.from && m.from === myId) return;
+        if (m.type === 'joined'){ myId=m.id; window.Net._id = myId; window.Net.onMessage && window.Net.onMessage(m); return; }
+        if (m.type === 'start' || m.type === 'state'){
+          window.Net.onMessage && window.Net.onMessage(m);
+          return;
+        }
+        if (m.type === 'cmd'){
+          // ignore my own echo
+          if (m.from && m.from === myId) return;
           window.Net.onMessage && window.Net.onMessage(m);
           return;
         }
       };
+      ws.onclose = () => { connected=false; window.Net._connected=false; };
+      ws.onerror = () => { /* keep silent; UI can inspect console if needed */ };
     },
-    ready: (v)=> ws && ws.send(JSON.stringify({ type:'ready', value: !!v })),
-    sendCmd: (cmd)=> ws && ws.send(JSON.stringify({ type:'cmd', cmd })),
-    isHost: ()=> false,
+    start: (payload)=> { try { ws && ws.send(JSON.stringify({ type:'start', payload })); } catch {} },
+    ready: (v)=> { try { ws && ws.send(JSON.stringify({ type:'ready', value: !!v })); } catch {} },
+    sendCmd: (cmd)=> { try { ws && ws.send(JSON.stringify({ type:'cmd', cmd })); } catch {} },
+    isConnected: ()=> connected,
     onMessage: null,
+    myId: ()=> myId
   };
 
-  console.log('[Net] adapter loaded. Usage: ?room=ROOM123&ws=ws://host:8080');
+  console.log('[Net] adapter loaded. Example: Net.connect(\"ROOM1\"); Net.start({seed,rows,cols,colors});');
 })();
