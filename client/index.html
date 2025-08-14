@@ -258,6 +258,8 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
+  const [onlineConnected, setOnlineConnected] = useState(false);
+
   useEffect(() => {
     window.__REPLAYING = false;
     // Expose local apply API for remote commands
@@ -301,7 +303,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
         };
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
-          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
+          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; setOnlineConnected(true); clearInterval(_timer); }
         }, 300);
       }
     }catch(e){ console.warn(e); }
@@ -801,6 +803,8 @@ function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
 
 /** =================== App =================== */
 function VersusSprites(){
+  const [onlineConnected, setOnlineConnected] = useState(false);
+
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [colorCount, setColorCount] = useState(5);
@@ -817,6 +821,15 @@ function VersusSprites(){
 
   const [running, setRunning] = useState(false);
   const [deadline, setDeadline] = useState(null);
+
+  useEffect(()=>{
+    const t = setInterval(()=>{
+      try{
+        if (window.Net && (Net.isHost || Net.sendCmd)){ setOnlineConnected(true); clearInterval(t); }
+      }catch(e){ /* ignore */ }
+    }, 300);
+    return ()=> clearInterval(t);
+  }, []);
   const [remaining, setRemaining] = useState(DURATION_MS);
   const [cpuLevel, setCpuLevel] = useState("NORMAL");
   const [cpuSuperOn, setCpuSuperOn] = useState(false);
@@ -1464,7 +1477,7 @@ function ensureActive(side){
         </div>
 
         <div className="flex justify-center">
-          <Board label={`CPU (${cpuLevel})`} isCPU={true} cpuLevel={cpuLevel} active={running}
+          <Board label={onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`} isCPU={!onlineConnected} cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
                  onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
