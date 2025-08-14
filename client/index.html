@@ -347,9 +347,7 @@ if (m.type === 'cmd'){
       const args = payload.args || [];
       const myId = (onlineRef.current && onlineRef.current.myId) || (window.Net && Net.myId && Net.myId()) || null;
       const key = (msg.from && myId && msg.from === myId) ? 'P' : 'C';
-      if (kind === 'tap')        { const fn = window['__applyStart_'      + key]; if (fn) return fn(...args); }
-      if (kind === 'twoFinger')  { const fn = window['__applyCancelLast_' + key]; if (fn) return fn(); }
-      if (kind === 'closeLoop')  { const fn = window['__applyClose_'      + key]; if (fn) return fn(); }
+
     }catch(e){ console.warn('[lockstep applyOne]', e); }
   };
 
@@ -366,10 +364,7 @@ if (m.type === 'cmd'){
   applyOne(m); return;
 }
 // end-cmd
- = m.cmd || {};
-            if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
-            if (kind === 'twoFinger')  return window.__applyCancelLast?.();
-            if (kind === 'closeLoop')  return window.__applyClose?.();
+
           }
         };
         // Mark connected when socket opens
