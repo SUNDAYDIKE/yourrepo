@@ -23,11 +23,8 @@
   @keyframes hitStun { 0%{ transform: translateY(0) scale(1) } 20%{ transform: translateY(-2px) scale(1.04) } 60%{ transform: translateY(1px) scale(0.98) } 100%{ transform: translateY(0) scale(1) } }
 
 /* --- Offline PvP additions --- */
-@media (max-width: 1024px){
-  .vs-two-cols { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)) !important; gap: 1.5rem; }
-}
+.vs-two-cols { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.5rem; }
 .touch-ctrl button{ min-width: 40px; min-height: 40px; }
-
 </style>
 </head>
 <body>
@@ -51,8 +48,8 @@ const IMG_PATHS = {
 /** =================== Global Config =================== */
 const CELL = 48;
 const GAP  = 6;
-const DEFAULT_ROWS = 10;
-const DEFAULT_COLS = 8;
+const DEFAULT_ROWS = 6;
+const DEFAULT_COLS = 6;
 const MAX_COLORS = 11;
 
 const BASE5 = ["#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6"];
@@ -263,7 +260,8 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 
 /** =================== Board =================== */
 function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
-  // --- Online (minimal) hooks ---
+    const lastCloseAtRef = useRef(0);
+// --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
   useEffect(() => {
     window.__REPLAYING = false;
@@ -805,6 +803,8 @@ function VersusSprites(){
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [colorCount, setColorCount] = useState(5);
+  useEffect(()=>{ window.__react_offline = ()=> startOfflineMatch(); return ()=>{ if (window.__react_offline) window.__react_offline=null; }; }, []);
+
 
   const [seed, setSeed] = useState(()=> Math.floor(Math.random()*1e9));
 
