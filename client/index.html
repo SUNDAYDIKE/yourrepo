@@ -122,9 +122,36 @@ function segSegIntersect(p, p2, q, q2){
   if (t>EPS && t<1-EPS && u>EPS && u<1-EPS) return { x:p.x+r.x*t, y:p.y+r.y*t, t,u };
   return null;
 }
+
 function buildGraph(points){
-  const segments=[]; for(let i=0;i<points.length;i++){ const a=points[i], b=points[(i+1)%points.length]; segments.push({a,b}
-  const splits=segments.map(()=>[0,1]);
+  const segments = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    segments.push({ a, b });
+  }
+  const splits = segments.map(() => [0, 1]);
+  for (let i = 0; i < splits.length; i++) {
+    for (let j = i + 1; j < splits.length; j++) {
+      if (Math.abs(i - j) <= 1 || (i === 0 && j === segments.length - 1)) continue;
+      const s1 = segments[i], s2 = segments[j];
+      const inter = segSegIntersect(s1.a, s1.b, s2.a, s2.b);
+      if (inter) { splits[i].push(inter.t); splits[j].push(inter.u); }
+    }
+  }
+  const graph = [];
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const ts = Array.from(new Set(splits[i])).sort((a,b)=>a-b);
+    for (let k = 0; k < ts.length - 1; k++) {
+      const t0 = ts[k], t1 = ts[k+1];
+      const p0 = { x: s.a.x + (s.b.x - s.a.x) * t0, y: s.a.y + (s.b.y - s.a.y) * t0 };
+      const p1 = { x: s.a.x + (s.b.x - s.a.x) * t1, y: s.a.y + (s.b.y - s.a.y) * t1 };
+      graph.push({ a: p0, b: p1 });
+    }
+  }
+  return graph;
+}
+const splits=segments.map(()=>[0,1]);
   for(let i=0;i<splits.length;i++){
     for(let j=i+1;j<splits.length;j++){
       if (Math.abs(i-j)<=1 || (i===0 && j===segments.length-1)) continue;
