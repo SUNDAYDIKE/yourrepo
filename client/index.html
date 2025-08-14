@@ -311,56 +311,69 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
   useEffect(() => {
-    // Expose local apply API for remote commands
-    window.__applyStart   = (r,c) => onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
-    window.__applyExtend  = (r,c) => onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
-    window.__applyCancelLast = () => { 
-      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
-      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+
+    // Per-board apply wrappers (no send)
+    const KEY = (isCPU ? 'C' : 'P');
+    window['__applyStart_'      + KEY] = (r,c)=> applyTap(r,c);
+    window['__applyExtend_'     + KEY] = (r,c)=> applyTap(r,c);
+    window['__applyCancelLast_' + KEY] = ()=> applyCancel();
+    window['__applyClose_'      + KEY] = ()=> applyClose();
+
+    // Ordered handler for Net messages
+    const handler = (m)=>{
+      if (!m) return;
+      if (m.type === 'joined'){
+        onlineRef.current.myId = (m.id || (window.Net && Net.myId && Net.myId())) || null;
+        return;
+      }
+      if (m.type === 'start'){
+        try { window.__applyStartMatch?.(m.payload); } catch(e){ console.warn(e); }
+        return;
+      }
+      if (m.type === 'cmd'){
+        const q = onlineRef.current.queue || (onlineRef.current.queue = { expect:1, pend:new Map() });
+        const applyOne = (msg)=>{
+          const payload = msg.cmd || {};
+          const kind = payload.kind;
+          const args = payload.args || [];
+          const myId = onlineRef.current.myId || (window.Net && Net.myId && Net.myId());
+          const key = (msg.from && myId && msg.from === myId) ? 'P' : 'C';
+          if (kind === 'tap')        { const fn = window['__applyStart_'      + key]; if (fn) return fn(...args); }
+          if (kind === 'twoFinger')  { const fn = window['__applyCancelLast_' + key]; if (fn) return fn(); }
+          if (kind === 'closeLoop')  { const fn = window['__applyClose_'      + key]; if (fn) return fn(); }
+        };
+        if (typeof m.seq === 'number'){
+          q.pend.set(m.seq, m);
+          while (q.pend.has(q.expect)){
+            const nxt = q.pend.get(q.expect); q.pend.delete(q.expect); q.expect++;
+            applyOne(nxt);
+          }
+          return;
+        }
+        applyOne(m); return;
+      }
     };
-    window.__applyClose = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
-// // Auto-connect if URL has ?room= & optional &ws=
+
+    if (window.Net){
+      const prev = Net.onMessage;
+      Net.onMessage = (m)=>{ try{ handler(m); }catch(e){ console.warn(e); } if (prev && m?.type!=='cmd') try{ prev(m); } catch(_){} };
+    }
+
+    // Auto-connect if URL has ?room= & optional &ws=
     try{
       const u = new URL(window.location.href);
       const room = u.searchParams.get('room');
       const ws   = u.searchParams.get('ws');
       if (room && window.Net && typeof Net.connect === 'function'){
         if (ws) Net.connect(room, ws); else Net.connect(room);
+        // Mark connected when socket opens
+        const _timer = setInterval(()=>{
+          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
+        }, 300);
       }
     }catch(e){ console.warn('[auto-connect]', e); }
 
-          
-if (m.type === 'cmd'){
-  // Deterministic order: queue by seq if present
-  if (!onlineRef.current.queue){ onlineRef.current.queue = { expect: 1, pend:new Map() }; }
-  const q = onlineRef.current.queue;
-
-  const applyOne = (msg)=>{
-    try{
-      const payload = msg.cmd || {};
-      const kind = payload.kind;
-      const args = payload.args || [];
-      const myId = (onlineRef.current && onlineRef.current.myId) || (window.Net && Net.myId && Net.myId()) || null;
-      const key = (msg.from && myId && msg.from === myId) ? 'P' : 'C';
-
-    }catch(e){ console.warn('[lockstep applyOne]', e); }
-  };
-
-  if (typeof m.seq === 'number'){
-    q.pend.set(m.seq, m);
-    while (q.pend.has(q.expect)){
-      const nxt = q.pend.get(q.expect); q.pend.delete(q.expect); q.expect++;
-      applyOne(nxt);
-    }
-    return; // wait until next messages arrive
-  }
-
-  // Fallback: no seq -> apply immediately
-  applyOne(m); return;
-}
-// end-cmd
-
-        };
+  }, []);;
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
           if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
