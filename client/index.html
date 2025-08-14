@@ -29,6 +29,17 @@
 /* --- Mobile guards --- */
 .board-surface { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: rgba(0,0,0,0); }
 .vs-two-cols { display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+
+/* layout-locked tweaks */
+@media (max-width: 1200px){
+  .board-surface > * { transform: scale(0.95); transform-origin: top center; }
+}
+@media (max-width: 900px){
+  .board-surface > * { transform: scale(0.90); }
+}
+@media (max-width: 720px){
+  .board-surface > * { transform: scale(0.85); }
+}
 </style>
 </head>
 <body>
@@ -430,18 +441,29 @@ const lastCloseAtRef = useRef(0);
   useEffect(() => {
     if (isCPU) return;
     function onWinMouseUp(e){
-      if (e.button === 0) {
-        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+      if (e && e.button !== undefined && e.button !== 0) return;
+      const now = Date.now();
+      if (now < suppressMouseUntilRef.current) return;
+      if (!closingArmed) { setLeftDown(false); setClosingArmed(false); return; }
+      if (now - lastCloseAtRef.current < 280) { setLeftDown(false); setClosingArmed(false); return; }
+      lastCloseAtRef.current = now;
+      onPhase?.("ATTACK"); handleLoopClose();
+      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }catch(_){}
+      setLeftDown(false); setClosingArmed(false);
+    }); }
         setLeftDown(false); setClosingArmed(false);
       }
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
       const now = Date.now();
-      suppressMouseUntilRef.current = now + 700;
-      __closeAttemptOnce('touch');
-      setLeftDown(false);
-      setClosingArmed(false);
+      suppressMouseUntilRef.current = now + 900;
+      if (!closingArmed) { setLeftDown(false); setClosingArmed(false); return; }
+      if (now - lastCloseAtRef.current < 280) { setLeftDown(false); setClosingArmed(false); return; }
+      lastCloseAtRef.current = now;
+      onPhase?.("ATTACK"); handleLoopClose();
+      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }catch(_){}
+      setLeftDown(false); setClosingArmed(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
     return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
@@ -493,6 +515,9 @@ function handleContext(e){
   }
 
   async function handleLoopClose(){
+    const now_guard = Date.now();
+    if (now_guard - lastCloseAtRef.current < 300) return; // dedupe
+    lastCloseAtRef.current = now_guard;
     const myEpoch = cancelEpochRef.current;
     const vertsRC = [...path];
     const pts = vertsRC.map(([r,c])=> centerSquare(r,c));
@@ -1387,7 +1412,7 @@ function ensureActive(side){
         <div className="ml-auto text-lg font-mono">{String(secs).padStart(2, "0")}<span className="text-sm opacity-70">s</span></div>
       </div>
 
-      <div className="w-full max-w-6xl px-4 mb-2 grid vs-two-cols gap-6 items-start" style={{ gridTemplateColumns: '1fr 1fr' }}>
+      <div className="w-full max-w-6xl px-4 mb-2 grid grid-cols-2 gap-6 items-start">
         <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
