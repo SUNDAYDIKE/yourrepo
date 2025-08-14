@@ -970,14 +970,9 @@ function VersusSprites(){
   }
 
   function startOfflineMatch(){
+    try{ window.__react_offline = startOfflineMatch; }catch(_){ }
     setGameMode('OFFLINE_PVP');
-    const payload = {
-      seed: Math.floor(Math.random()*1e9),
-      rows, cols, colorCount,
-      customGrid: customGrid || null,
-      duration: DURATION_MS
-    };
-    applyStartMatch(payload);
+    startMatch();
   }
 const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
   function pushImpact(side, amount, kind){
@@ -1381,7 +1376,7 @@ function ensureActive(side){
         <div className="ml-auto text-lg font-mono">{String(secs).padStart(2, "0")}<span className="text-sm opacity-70">s</span></div>
       </div>
 
-      <div className="w-full max-w-6xl px-4 mb-2 grid vs-two-cols gap-6 items-start">
+      <div className="w-full max-w-6xl px-4 mb-2 grid vs-two-cols gap-6 items-start" style={{gridTemplateColumns:'1fr 1fr'}}>
         <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
