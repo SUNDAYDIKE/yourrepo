@@ -123,7 +123,7 @@ function segSegIntersect(p, p2, q, q2){
   return null;
 }
 function buildGraph(points){
-  const segments=[]; for(let i=0;i<points.length;i++){ const a=points[i], b=points[(i+1)%points.length]; segments.push({a,b}); }
+  const segments=[]; for(let i=0;i<points.length;i++){ const a=points[i], b=points[(i+1)%points.length]; segments.push({a,b}
   const splits=segments.map(()=>[0,1]);
   for(let i=0;i<splits.length;i++){
     for(let j=i+1;j<splits.length;j++){
@@ -134,7 +134,7 @@ function buildGraph(points){
     }
   }
   for (let i=0;i<splits.length;i++) splits[i] = Array.from(new Set(splits[i].sort((a,b)=>a-b)));
-  const nodes=[]; const idByKey=new Map(); function getId(p){ const k=p.x.toFixed(4)+","+p.y.toFixed(4); if(!idByKey.has(k)){ idByKey.set(k,nodes.length); nodes.push({x:p.x,y:p.y}); } return idByKey.get(k); }
+  const nodes=[]; const idByKey=new Map(); function getId(p){ const k=p.x.toFixed(4)+","+p.y.toFixed(4); if(!idByKey.has(k)){ idByKey.set(k,nodes.length); nodes.push({x:p.x,y:p.y} return idByKey.get(k); }
   const edges=new Set(); const addEdge=(u,v)=>{ if(u===v) return; const a=Math.min(u,v), b=Math.max(u,v); edges.add(a+","+b); };
   for(let i=0;i<segments.length;i++){
     const s=segments[i], arr=splits[i];
@@ -146,7 +146,7 @@ function buildGraph(points){
     }
   }
   const out=new Map(); const ang=(from,to)=> Math.atan2(nodes[to].y-nodes[from].y, nodes[to].x-nodes[from].x);
-  edges.forEach(ev=>{ const [a,b]=ev.split(",").map(Number); if(!out.has(a)) out.set(a,[]); if(!out.has(b)) out.set(b,[]); out.get(a).push({to:b,ang:ang(a,b)}); out.get(b).push({to:a,ang:ang(b,a)}); });
+  edges.forEach(ev=>{ const [a,b]=ev.split(",").map(Number); if(!out.has(a)) out.set(a,[]); if(!out.has(b)) out.set(b,[]); out.get(a).push({to:b,ang:ang(a,b)}); out.get(b).push({to:a,ang:ang(b,a)});
   out.forEach(arr=> arr.sort((p,q)=> p.ang-q.ang));
   const visited=new Set(); const edgeKey=(u,v)=> u+"->"+v;
   function nextEdge(u,v){ const arr=out.get(v); const angRev=Math.atan2(nodes[u].y-nodes[v].y, nodes[u].x-nodes[v].x); let idx=0; while(idx<arr.length && arr[idx].ang < angRev - EPS) idx++; const nxt=arr[(idx-1+arr.length)%arr.length]; return {from:v,to:nxt.to}; }
@@ -179,7 +179,7 @@ function paletteFromSeed(seed, count){
   const extras=count-5; const rng=mulberry32(seed); const startHue=Math.floor(rng()*360); const golden=137.508; const sat=76, light=52;
   const hues=[]; for(let i=0;i<extras*3;i++) hues.push((startHue+Math.round(i*golden))%360);
   const chosen=BASE5.map(c=> rgbToH(c).h);
-  function farEnough(h){ return chosen.every(ch=>{ let d=Math.abs(h-ch); d=Math.min(d,360-d); return d>=18; }); }
+  function farEnough(h){ return chosen.every(ch=>{ let d=Math.abs(h-ch); d=Math.min(d,360-d); return d>=18; }
   const out=BASE5.slice();
   for(const h of hues){ if (out.length>=count) break; if (farEnough(h)){ out.push(hsl(h,sat,light)); chosen.push(h); } }
   while(out.length<count){ out.push(hsl((startHue+out.length*golden)%360, sat, light)); }
@@ -189,7 +189,7 @@ function rgbToH(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h
 function mulberry32(a){ return function(){ a|=0; a=(a+0x6D2B79F5)|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|a)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
 /** =================== Tokens =================== */
-function makeTokenFactory(){ const nextId={v:1}; return (color)=>({ id: nextId.v++, color }); }
+function makeTokenFactory(){ const nextId={v:1}; return (color)=>({ id: nextId.v++, color }
 const makeToken = makeTokenFactory();
 function colorsSeedGrid(seed, rows, cols, colorCount) {
   const rng = mulberry32(seed);
@@ -286,11 +286,11 @@ const lastCloseAtRef = useRef(0);
   useEffect(() => {
     window.__REPLAYING = false;
     // Expose local apply API for remote commands
-    window.__applyStart = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyExtend = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyCancelLast = () => { 
-      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
-      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+    window.__applyStart = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] };window.__applyExtend = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] };window.__applyCancelLast = () => { 
+      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'} 
+      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}
     };
-    window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); };
+    window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'};
 
     // Auto-connect if URL has ?room= & optional &ws=
     try{
@@ -376,7 +376,7 @@ const lastCloseAtRef = useRef(0);
     onPalette?.(Array.from(setc));
   }, [grid]);
 
-  const segments = useMemo(()=>{ const segs=[]; for(let i=0;i+1<path.length;i++){ const [r1,c1]=path[i], [r2,c2]=path[i+1]; const p1=centerSquare(r1,c1), p2=centerSquare(r2,c2); segs.push({x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y}); } return segs; },[path]);
+  const segments = useMemo(()=>{ const segs=[]; for(let i=0;i+1<path.length;i++){ const [r1,c1]=path[i], [r2,c2]=path[i+1]; const p1=centerSquare(r1,c1), p2=centerSquare(r2,c2); segs.push({x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y} return segs; },[path]);
 
   const highlightSet = useMemo(()=>{
     const set = new Set();
@@ -448,9 +448,9 @@ const lastCloseAtRef = useRef(0);
       if (now - lastCloseAtRef.current < 280) { setLeftDown(false); setClosingArmed(false); return; }
       lastCloseAtRef.current = now;
       onPhase?.("ATTACK"); handleLoopClose();
-      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }catch(_){}
+      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}catch(_){}
       setLeftDown(false); setClosingArmed(false);
-    }); }
+    }
         setLeftDown(false); setClosingArmed(false);
       }
     }
@@ -462,7 +462,7 @@ const lastCloseAtRef = useRef(0);
       if (now - lastCloseAtRef.current < 280) { setLeftDown(false); setClosingArmed(false); return; }
       lastCloseAtRef.current = now;
       onPhase?.("ATTACK"); handleLoopClose();
-      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }catch(_){}
+      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}catch(_){}
       setLeftDown(false); setClosingArmed(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
@@ -544,7 +544,7 @@ function handleContext(e){
     if (faces.length === 0) {
       onAttackFrame?.({ sides: Math.max(vertsRC.length, 3) });
     } else {
-      await glowFacesSequential(faces, glowMs, (nSides)=> { onAttackFrame?.({ sides: nSides }); });
+      await glowFacesSequential(faces, glowMs, (nSides)=> { onAttackFrame?.({ sides: nSides });
       if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
     }
 
@@ -609,7 +609,7 @@ function handleContext(e){
     Object.entries(fallInfo).forEach(([id, rows]) => { if (rows>0) shiftInit[id] = -rows * pxPerRow; });
     setAnimShift(shiftInit);
     setGrid(finalGrid);
-    requestAnimationFrame(()=> { setAnimShift((m)=>{ const z={...m}; Object.keys(z).forEach(k=> z[k]=0); return z; }); });
+    requestAnimationFrame(()=> { setAnimShift((m)=>{ const z={...m}; Object.keys(z).forEach(k=> z[k]=0); return z; });
     await sleep(FALL_MS);
   }
 
@@ -704,7 +704,7 @@ function handleContext(e){
               const highlighted = highlightSet.has(keyRC(r,c));
               const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
               const handlers = isCPU ? {} : {
-                onMouseDown: (e)=>{ if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
+                onMouseDown: (e)=>{ if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] } },
                 onTouchStart: (e)=>{
                   const now=Date.now(); if (closingArmed && (now - lastCloseAtRef.current < 220)) return;
                   if (locked) return;
@@ -712,8 +712,8 @@ function handleContext(e){
                     setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
-                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
-                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}
+                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}
                   }
                 },
               };
@@ -780,7 +780,7 @@ async function planCPUMoveAsync(grid, level, rows, cols, spCfg, timeBudgetMs=8){
     const pts = path.map(([r,c])=> centerSquare(r,c));
     const g = buildGraph(pts);
     const faces = g.faces.length;
-    const segs = []; for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length]; segs.push({a,b}); }
+    const segs = []; for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length]; segs.push({a,b}
     let inters = 0; for(let i=0;i<segs.length;i++){ for(let j=i+1;j<segs.length;j++){ if (Math.abs(i-j)<=1 || (i===0 && j===segs.length-1)) continue; if (segSegIntersect(segs[i].a,segs[i].b,segs[j].a,segs[j].b)) inters++; } }
     const toClear = new Set();
     for(let i=0;i<path.length;i++){
