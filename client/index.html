@@ -329,7 +329,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
         };
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
-          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; setOnlineConnected(true); clearInterval(_timer); }
+          if (window.Net && typeof Net.isConnected==='function' && Net.isConnected()){ onlineRef.current.connected = true; setOnlineConnected(true); clearInterval(_timer); }
         }, 300);
       }
     }catch(e){ console.warn(e); }
@@ -853,7 +853,7 @@ function VersusSprites(){
   useEffect(()=>{
     const t = setInterval(()=>{
       try{
-        if (window.Net && (Net.isHost || Net.sendCmd)){ setOnlineConnected(true); clearInterval(t); }
+        if (window.Net && typeof Net.isConnected==='function' && Net.isConnected()){ setOnlineConnected(true); clearInterval(t); }
       }catch(e){ /* ignore */ }
     }, 300);
     return ()=> clearInterval(t);
@@ -999,10 +999,11 @@ function VersusSprites(){
 
   
   function applyStartMatch(payload){
-    const { seed: sd, rows: rws, cols: cls, colorCount: cc, customGrid: cg, duration: dur } = payload || {};
+    const { seed: sd, rows: rws, cols: cls, colorCount: ccRaw, colors: ccAlt, customGrid: cg, duration: dur } = payload || {};
     if (typeof rws === 'number') setRows(rws);
     if (typeof cls === 'number') setCols(cls);
-    if (typeof cc  === 'number') setColorCount(cc);
+    const cc = (typeof ccRaw==='number') ? ccRaw : (typeof ccAlt==='number' ? ccAlt : undefined);
+    if (typeof cc === 'number') setColorCount(cc);
     if (cg) setCustomGrid(cg); else setCustomGrid(null);
     if (typeof sd === 'number') setSeed(sd);
     const durMs = (typeof dur === 'number' && dur > 0) ? dur : DURATION_MS;
