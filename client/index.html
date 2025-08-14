@@ -266,7 +266,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
       if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
       else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
     };
-    window.__applyClose = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); }); };
+    window.__applyClose = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
 
     // Auto-connect if URL has ?room= & optional &ws=
     try{
