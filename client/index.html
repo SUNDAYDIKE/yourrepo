@@ -373,7 +373,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
       }
     }catch(e){ console.warn('[auto-connect]', e); }
 
-  }, []);;
+  }, []);
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
           if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
