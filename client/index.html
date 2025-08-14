@@ -364,7 +364,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
   useEffect(()=>{
     setGrid(tokensFromColors(colorSeedGrid));
     setPath([]); setStart(null); setActiveColor(null);
-    setIsClosing(false); setClosingAr(false);
+    setIsClosing(false); setClosingArmed(false);
     setCombo(1.0); setScore(0); setAnnouncements([]);
     onPhase?.("NEUTRAL"); onPreparedChange?.(false);
     const setc = new Set();
@@ -375,7 +375,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
   useEffect(()=>{
     if (cancelSignal!=null){
       cancelEpochRef.current += 1;
-      setIsClosing(false); setClosingAr(false);
+      setIsClosing(false); setClosingArmed(false);
       setPath([]); setStart(null); setActiveColor(null);
       onPhase?.("NEUTRAL"); onPreparedChange?.(false);
     }
@@ -418,7 +418,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
 
   function pushAnnounce(text){ const item={ id: Date.now()+Math.random(), text, ts: Date.now() }; setAnnouncements(a=> [item, ...a].slice(0,6)); setTimeout(()=>{ setAnnouncements(a=> a.filter(x=>x.id!==item.id)); }, 4000); }
   function armComboReset(){ if(comboTimer.current) window.clearTimeout(comboTimer.current); comboTimer.current = window.setTimeout(()=>setCombo(1.0), SCORE_CFG.comboResetMs); }
-  function resetPath(){ setPath([]); setStart(null); setActiveColor(null); setIsClosing(false); setClosingAr(false); onPhase?.("NEUTRAL"); onPreparedChange?.(false); }
+  function resetPath(){ setPath([]); setStart(null); setActiveColor(null); setIsClosing(false); setClosingArmed(false); onPhase?.("NEUTRAL"); onPreparedChange?.(false); }
 
   function canTapColor(token, r, c){
     if (locked) return false;
@@ -456,13 +456,13 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
     function onWinMouseUp(e){
       if (e.button === 0) {
         if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
-        setLeftDown(false); setClosingAr(false);
+        setLeftDown(false); setClosingArmed(false);
       }
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
       if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
-      setLeftDown(false); setClosingAr(false);
+      setLeftDown(false); setClosingArmed(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
     return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
@@ -502,7 +502,7 @@ function handleContext(e){
     if (leftDown){
       if (closingArmed){
         setIsClosing(false);
-        setClosingAr(false);
+        setClosingArmed(false);
       } else {
         setPath(p => (p.length>1 ? p.slice(0,-1) : p));
       }
@@ -707,7 +707,7 @@ function handleContext(e){
                     setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
-                    if (closingArmed){ setIsClosing(false); setClosingAr(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
                     else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
                   }
                 },
