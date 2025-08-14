@@ -27,6 +27,19 @@
 @media (max-width: 980px){ .vs-row { transform: scale(0.72); } }
 @media (max-width: 860px){ .vs-row { transform: scale(0.64); } }
 @media (max-width: 760px){ .vs-row { transform: scale(0.56); } }
+@media (max-width: 680px){ .vs-row { transform: scale(0.50); } }
+@media (max-width: 600px){ .vs-row { transform: scale(0.46); } }
+@media (max-width: 540px){ .vs-row { transform: scale(0.42); } }
+
+@media (orientation: portrait){
+  .portrait-blocker{ display:flex !important; }
+  .landscape-required{ display:none !important; }
+}
+@media (orientation: landscape){
+  .portrait-blocker{ display:none !important; }
+  .landscape-required{ display:block !important; }
+}
+
 </style>
 
 </head>
@@ -1422,7 +1435,14 @@ function ensureActive(side){
         <div className="ml-auto text-lg font-mono">{String(secs).padStart(2, "0")}<span className="text-sm opacity-70">s</span></div>
       </div>
 
-      <div className="w-full max-w-6xl px-4 mb-2 vs-row grid grid-cols-4 gap-6 items-start">
+      <div className="portrait-blocker fixed inset-0 z-50 hidden items-center justify-center bg-slate-950 text-slate-100 text-center p-6">
+  <div>
+    <div className="text-lg font-semibold mb-2">横向きにしてください</div>
+    <div className="text-sm opacity-80">スマホでは横画面のみ対応です。画面を回転してください。</div>
+  </div>
+</div>
+<div className="landscape-required">
+  <div className="w-full max-w-6xl px-4 mb-2 vs-row grid grid-cols-4 gap-6 items-start">
         <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
@@ -1435,7 +1455,7 @@ function ensureActive(side){
         </div>
 
         {/* Center area; clash placed near Player HP bar right edge (+offset) */}
-        <div className="xl:col-span-2">
+        <div className="col-span-2">
           <div ref={wrapRef} className="relative w-full h-64 flex items-center justify-center gap-10">
             {/* precise clash effect */}
             {clashFlash && (
@@ -1503,6 +1523,7 @@ function ensureActive(side){
                  glowMs={glowMs} rows={rows} cols={cols} cancelSignal={cCancelSig} locked={cLocked} showDamage={showDamage} />
         </div>
       </div>
+    </div>
 
       {/* Black modal win window with Rematch Yes/No; dismissible by outside click or Esc */}
       {showWinModal && winner && (
@@ -1517,10 +1538,7 @@ function ensureActive(side){
             </div>
           </div>
         </div>
-      )}
-
-      <div className="fixed top-2 left-2 z-50"><button onClick={startMatch} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm disabled:opacity-50" disabled={running}>Start</button></div>
-        <div className="w-full max-w-6xl px-4 mt-2">
+      )}        <div className="w-full max-w-6xl px-4 mt-2">
         <div className="bg-slate-800/60 rounded-2xl p-3 text-sm flex items-center gap-4">
           <div>PLAYER: <b>{pScoreRef.current}</b></div>
           <div>CPU: <b>{cScoreRef.current}</b></div>
@@ -1574,3 +1592,15 @@ root.render(<VersusSprites />);
   <script src="net_debug_overlay.js?v=1"></script>
   <script src="online_lockstep_hotfix.js?v=1"></script>
 </body></html>
+function tryLandscapeLock(){
+  const el = document.documentElement;
+  try {
+    if (!document.fullscreenElement && el.requestFullscreen) {
+      el.requestFullscreen().catch(()=>{});
+    }
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(()=>{});
+    }
+  } catch (_) {}
+}
+
