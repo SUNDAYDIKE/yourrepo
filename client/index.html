@@ -1493,7 +1493,7 @@ function ensureActive(side){
         </div>
 
         <div className="flex justify-center">
-          <Board label={ rightHuman ? 'PLAYER2' : (onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`} isCPU={ rightHuman ? false : !onlineConnected } cpuLevel={cpuLevel} active={running}
+          <Board label={ rightHuman ? 'PLAYER2' : (onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`) } isCPU={ rightHuman ? false : !onlineConnected } cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
                  onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
