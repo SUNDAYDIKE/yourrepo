@@ -1,11 +1,12 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>LoopLines – Versus v1.08h (fix11)</title>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script crossorigin="" src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin="" src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
@@ -25,8 +26,7 @@
 </head>
 <body>
 <div id="root"></div>
-
-<script type="text/babel" data-presets="env,react">
+<script data-presets="env,react" type="text/babel">
 const { useMemo, useRef, useState, useEffect } = React;
 
 // ==== Local image file names (place next to this HTML) ====
@@ -259,19 +259,18 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
   useEffect(() => {
-    // Expose local apply API for remote commands
-    // Expose local apply API for remote commands (per board: P=player, C=opponent)
-(function(){
-  const __k = (isCPU ? 'C' : 'P');
-  window['__applyStart_' + __k] = (r,c) => onCellTap(r,c);
-  window['__applyExtend_' + __k] = (r,c) => onCellTap(r,c);
-  window['__applyCancelLast_' + __k] = () => {
-    if (closingArmed){ setIsClosing(false); setClosingArmed(false); }
+    // Expose local apply API for remote commands (OPPONENT board only)
+if (label === 'OPPONENT') {
+  window.__applyStart   = (r,c) => onCellTap(r,c);
+  window.__applyExtend  = (r,c) => onCellTap(r,c);
+  window.__applyCancelLast = () => { 
+    if (closingArmed){ setIsClosing(false); setClosingArmed(false); } 
     else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); }
   };
-  window['__applyClose_' + __k] = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
-})();
-// Auto-connect if URL has ?room= & optional &ws=
+  window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
+} onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); };
+
+    // Auto-connect if URL has ?room= & optional &ws=
     try{
       const u = new URL(window.location.href);
       const room = u.searchParams.get('room');
@@ -289,9 +288,9 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
             // Ignore own echo
             if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
             const { kind, args } = m.cmd || {};
-            if (kind === 'tap')        return window['__applyStart_C']?.(...(args||[]));
-            if (kind === 'twoFinger')  return window['__applyCancelLast_C']?.();
-            if (kind === 'closeLoop')  return window['__applyClose_C']?.();
+            if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
+            if (kind === 'twoFinger')  return window.__applyCancelLast?.();
+            if (kind === 'closeLoop')  return window.__applyClose?.();
           }
         };
         // Mark connected when socket opens
@@ -302,6 +301,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     }catch(e){ console.warn(e); }
   }, []);
 
+  const isOnlineRoom = (()=>{ try{ const u=new URL(location.href); return !!u.searchParams.get('room'); }catch(e){ return false; } })();
   const BOARD_W = cols * CELL + (cols - 1) * GAP;
   const BOARD_H = rows * CELL + (rows - 1) * GAP;
 
@@ -406,7 +406,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     }
     if(r===start[0] && c===start[1]){
       if(path.length>=3){
-        if (isCPU && !(window.Net && Net.connected)) { setIsClosing(true); handleLoopClose(); }
+        if (isCPU) { setIsClosing(true); handleLoopClose(); }
         else { setIsClosing(true); setClosingArmed(true); }
       } else { pushAnnounce("3点以上でループ"); }
       return;
@@ -421,13 +421,13 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     if (isCPU) return;
     function onWinMouseUp(e){
       if (e.button === 0) {
-        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
         setLeftDown(false); setClosingArmed(false);
       }
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
-      if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+      if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
@@ -445,7 +445,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
     if (!inside && start && path.length>=3){
       e.preventDefault();
-      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
     }
   }
   function handleOuterTouchStart(e){
@@ -458,7 +458,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
     if (!inside && start && path.length>=3){
       e.preventDefault();
-      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
     }
   }
 function handleContext(e){
@@ -475,7 +475,7 @@ function handleContext(e){
       return;
     }
     if (start && path.length>=3){
-      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); return;
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); return;
     }
   }
 
@@ -678,7 +678,7 @@ function handleContext(e){
                   }
                 },
               };
-              if (isCPU && !(window.Net && Net.connected)) { handlers.onMouseDown = ()=>{}; }
+              if (isCPU) { handlers.onMouseDown = ()=>{}; }
               return (
                 <button key={token.id} {...handlers}
                   className={`absolute z-10 rounded-xl shadow-lg ${!isCPU ? (canTap ? "hover:brightness-110 active:scale-95" : "opacity-60 cursor-not-allowed") : ""}`}
@@ -795,7 +795,7 @@ function sampleDistinct(arr, m){ if (arr.length<m) return null; const idxs=new S
 function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
 
 /** =================== App =================== */
-// const isOnlineRoom = (()=>{ try{ const u=new URL(window.location.href); return !!u.searchParams.get('room'); }catch(e){ return false; } })();
+function VersusSprites(){
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [colorCount, setColorCount] = useState(5);
@@ -956,28 +956,7 @@ function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
     setRemaining(DURATION_MS); setDeadline(Date.now()+DURATION_MS);
     pScoreRef.current = 0; cScoreRef.current = 0; resetFight(); setRunning(true);
   }
-  
-  window.__applyStartMatch = (payload)=>{
-    const { seed: s, rows: rr, cols: cc, colors: kk } = payload || {};
 
-    // 盤面サイズや色数を先に反映（存在するsetterだけ呼ぶ）
-    if (Number.isFinite(rr) && typeof setRows === 'function') setRows(rr);
-    if (Number.isFinite(cc) && typeof setCols === 'function') setCols(cc);
-    if (Number.isFinite(kk) && typeof setColorCount === 'function') setColorCount(kk);
-
-    // ランダムではなく配信された seed で開始
-    setSeed(s ?? Math.floor(Math.random()*1e9));
-    setRemaining(DURATION_MS);
-    setDeadline(Date.now() + DURATION_MS);
-    pScoreRef.current = 0;
-    cScoreRef.current = 0;
-    resetFight();
-    setRunning(true);
-
-    // （任意）CPU戦フラグがあるなら無効化
-    // if (typeof setCpuEnabled === 'function') setCpuEnabled(false);
-  };
-  
   const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
   function pushImpact(side, amount, kind){
     const ring = { id: Date.now()+Math.random(), size: ringSizeFromDamage(amount), kind };
@@ -1451,7 +1430,7 @@ function ensureActive(side){
         </div>
 
         <div className="flex justify-center">
-          <Board label={`CPU (${cpuLevel})`} isCPU={!isOnlineRoom} cpuLevel={cpuLevel} active={running}
+          <Board label={isOnlineRoom ? "OPPONENT" : `CPU (${cpuLevel})`} isCPU={!isOnlineRoom} cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
                  onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
@@ -1527,8 +1506,7 @@ function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<VersusSprites />);
 </script>
-  <script src="client_online_adapter_snippet.js?v=7"></script>
-  <script src="online_start_helper_v4.js?v=6"></script>
-  <script src="net_debug_overlay.js?v=1"></script>
-  <script src="online_pvp_patch.js?v=1"></script>
+<script src="client_online_adapter_snippet.js?v=7"></script>
+<script src="online_start_helper_v4.js?v=6"></script>
+<script src="net_debug_overlay.js?v=1"></script>
 </body></html>
