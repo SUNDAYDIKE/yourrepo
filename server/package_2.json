@@ -1,13 +1,14 @@
 {
-  "name": "looplines-relay-seq",
+  "name": "looplines-relay",
   "private": true,
   "type": "module",
-  "version": "1.0.0",
   "dependencies": {
     "ws": "^8.17.0"
   },
   "scripts": {
     "start": "node server_ws_relay.js"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

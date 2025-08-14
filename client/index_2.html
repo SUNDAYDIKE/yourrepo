@@ -44,8 +44,8 @@ const IMG_PATHS = {
 /** =================== Global Config =================== */
 const CELL = 48;
 const GAP  = 6;
-const DEFAULT_ROWS = 6;
-const DEFAULT_COLS = 6;
+const DEFAULT_ROWS = 10;
+const DEFAULT_COLS = 8;
 const MAX_COLORS = 11;
 
 const BASE5 = ["#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6"];
@@ -256,14 +256,6 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 
 /** =================== Board =================== */
 function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
-  // --- Net/determinism helpers ---
-  const suppressSendRef = useRef(false); // when true, onCellTap et al. won't send Net cmds
-  const myKey = (isCPU ? 'C' : 'P');     // left=P (local), right=C (opponent) in versus layout
-  // Apply wrappers: apply locally without sending
-  function applyTap(r,c){ try{ suppressSendRef.current = true; onCellTap(r,c); } finally { suppressSendRef.current = false; } }
-  function applyCancel(){ try{ suppressSendRef.current = true; if (closingArmed){ setIsClosing(false); setClosingArmed(false); } else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); } } finally { suppressSendRef.current = false; } }
-  function applyClose(){ try{ suppressSendRef.current = true; setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); } finally { suppressSendRef.current = false; } }
-
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
   useEffect(() => {
@@ -271,8 +263,8 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     window.__applyStart   = (r,c) => onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
     window.__applyExtend  = (r,c) => onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
     window.__applyCancelLast = () => { 
-      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
-      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
+      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
     };
     window.__applyClose = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
 
@@ -291,27 +283,9 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
             return;
           }
           if (m.type === 'cmd'){
-  // Deterministic order apply: queue by seq if available
-  if (!onlineRef.current.queue){ onlineRef.current.queue = { expect: 1, pend:new Map() }; }
-  const q = onlineRef.current.queue;
-  const applyOne = (msg)=>{
-    const { kind, args } = msg.cmd || {};
-    const key = (msg.from && msg.from === onlineRef.current.myId) ? 'P' : 'C';
-    if (kind === 'tap')        { const fn = window['__applyStart_'      + key]; if (fn) return fn(...(args||[])); }
-    if (kind === 'twoFinger')  { const fn = window['__applyCancelLast_' + key]; if (fn) return fn(); }
-    if (kind === 'closeLoop')  { const fn = window['__applyClose_'      + key]; if (fn) return fn(); }
-  };
-  if (typeof m.seq === 'number'){
-    q.pend.set(m.seq, m);
-    while (q.pend.has(q.expect)){
-      const nxt = q.pend.get(q.expect); q.pend.delete(q.expect); q.expect++;
-      applyOne(nxt);
-    }
-    return;
-  }
-  // Fallback: no seq provided -> immediate apply
-  applyOne(m); return;
-} = m.cmd || {};
+            // Ignore own echo
+            if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
+            const { kind, args } = m.cmd || {};
             if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
             if (kind === 'twoFinger')  return window.__applyCancelLast?.();
             if (kind === 'closeLoop')  return window.__applyClose?.();
@@ -420,20 +394,13 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   }
 
   function onCellTap(r,c){
-  // When online and this is the local board, send-only unless suppressed
-  if (!suppressSendRef.current && window.Net && onlineRef.current?.connected && !isCPU){
-    try { Net.sendCmd({kind:'tap', args:[r,c]}); } catch {}
-    return;
-  }
-
     if (locked) return;
     if (!active && !isCPU) return;
     const token=grid[r][c];
     const color=token?.color;
     if(!start){
       setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true); return;
-    
-}
+    }
     if(r===start[0] && c===start[1]){
       if(path.length>=3){
         if (isCPU) { setIsClosing(true); handleLoopClose(); }
@@ -451,13 +418,13 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     if (isCPU) return;
     function onWinMouseUp(e){
       if (e.button === 0) {
-        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
         setLeftDown(false); setClosingArmed(false);
       }
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
-      if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
+      if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
@@ -475,7 +442,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
     if (!inside && start && path.length>=3){
       e.preventDefault();
-      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
     }
   }
   function handleOuterTouchStart(e){
@@ -488,7 +455,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
     if (!inside && start && path.length>=3){
       e.preventDefault();
-      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
     }
   }
 function handleContext(e){
@@ -505,7 +472,7 @@ function handleContext(e){
       return;
     }
     if (start && path.length>=3){
-      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); return;
+      setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); return;
     }
   }
 
@@ -703,8 +670,8 @@ function handleContext(e){
                     setLeftDown(true); onCellTap(r,c); if (window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
-                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
-                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
                   }
                 },
               };
@@ -1515,13 +1482,13 @@ function ensureActive(side){
         <div className="w-full mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="flex items-center gap-2">Rows
-              <input type="number" min="6" max="14" value={rows} onChange={e= inputmode="numeric" pattern="[0-9]*" min="4" max="12" step="1">> { const v=Math.max(6, Math.min(14, Number(e.target.value)||DEFAULT_ROWS)); setRows(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
+              <input type="number" min="6" max="14" value={rows} onChange={e=> { const v=Math.max(6, Math.min(14, Number(e.target.value)||DEFAULT_ROWS)); setRows(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
             <label className="flex items-center gap-2">Cols
-              <input type="number" min="6" max="12" value={cols} onChange={e= inputmode="numeric" pattern="[0-9]*" min="4" max="12" step="1">> { const v=Math.max(6, Math.min(12, Number(e.target.value)||DEFAULT_COLS)); setCols(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
+              <input type="number" min="6" max="12" value={cols} onChange={e=> { const v=Math.max(6, Math.min(12, Number(e.target.value)||DEFAULT_COLS)); setCols(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
             <label className="flex items-center gap-2">Colors
-              <input type="number" min="3" max="11" value={colorCount} onChange={e= inputmode="numeric" pattern="[0-9]*" min="4" max="12" step="1">> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
+              <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
             <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
           </div>
