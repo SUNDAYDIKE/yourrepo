@@ -292,6 +292,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
             if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
             if (kind === 'twoFinger')  return window.__applyCancelLast?.();
             if (kind === 'closeLoop')  return window.__applyClose?.();
+            if (kind === 'start99')   return window.__applyStartMatch?.(args?.[0]);
           
       } finally {
         window.__REPLAYING = __prevReplaying;
@@ -955,11 +956,40 @@ function VersusSprites(){
     claimStateRef.current = { itemId:null, claims:[], timer:null };
   }
 
-  function startMatch(){
-    setSeed(Math.floor(Math.random()*1e9));
-    setRemaining(DURATION_MS); setDeadline(Date.now()+DURATION_MS);
+  
+  function applyStartMatch(payload){
+    const { seed: sd, rows: rws, cols: cls, colorCount: cc, customGrid: cg, duration: dur } = payload || {};
+    if (typeof rws === 'number') setRows(rws);
+    if (typeof cls === 'number') setCols(cls);
+    if (typeof cc  === 'number') setColorCount(cc);
+    if (cg) setCustomGrid(cg); else setCustomGrid(null);
+    if (typeof sd === 'number') setSeed(sd);
+    const durMs = (typeof dur === 'number' && dur > 0) ? dur : DURATION_MS;
+    setRemaining(durMs); setDeadline(Date.now() + durMs);
     pScoreRef.current = 0; cScoreRef.current = 0; resetFight(); setRunning(true);
   }
+  // Expose for online adapter
+  window.__applyStartMatch = applyStartMatch;
+
+function startMatch(){
+    const payload = {
+      seed: Math.floor(Math.random()*1e9),
+      rows, cols, colorCount,
+      customGrid: customGrid || null,
+      duration: DURATION_MS
+    };
+    // If online, broadcast start; otherwise just apply locally
+    try {
+      if (!window.__REPLAYING && window.Net && onlineRef.current?.connected){
+        if (typeof Net.sendStart === 'function'){
+          Net.sendStart(payload);
+        } else if (typeof Net.sendCmd === 'function'){
+          Net.sendCmd({ kind: 'start99', args: [payload] });
+        }
+      }
+    } catch (e) { console.warn('start broadcast failed', e); }
+    applyStartMatch(payload);
+    }
 
   const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
   function pushImpact(side, amount, kind){
