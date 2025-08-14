@@ -257,6 +257,8 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 /** =================== Board =================== */
 function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
   // --- Online (minimal) hooks ---
+  const lastSeqRef = useRef(0);
+
   const onlineRef = useRef({ connected:false, myId:null });
   const [onlineConnected, setOnlineConnected] = useState(false);
 
@@ -276,22 +278,19 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
     }
     
 
-    window[__startKey] = (r,c) => { 
-      onCellTap(r,c); 
-      // Only the local player ('P') should broadcast their own taps
-      if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected){
-        Net.sendCmd({ kind:'tap', role:'P', args:[r,c] });
+    window[__startKey] = (r,c) => {
+      if (onlineConnected) {
+        if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected){ Net.sendCmd({ kind:'tap', args:[r,c] }); }
+      } else {
+        onCellTap(r,c);
       }
     };
-    window[__cancelKey] = () => { 
-      if (closingArmed){ setIsClosing(false); setClosingArmed(false); setPath(p => (p.length>1 ? p.slice(0,-1) : p)); }
-      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); }
-      if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'twoFinger', role:'P' });
-    };
-    window[__closeKey] = () => { 
-      setIsClosing(true); onPhase? onPhase('CLOSING') : null; 
-      onClosePath();
-      if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'closeLoop', role:'P' });
+    window[__closeKey] = () => {
+      if (onlineConnected){
+        if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'closeLoop' });
+      } else {
+        setIsClosing(true); onPhase? onPhase('CLOSING') : null; onClosePath();
+      }
     };
     
 
@@ -317,9 +316,9 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
             // Ignore own echo
             if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
             const { kind, args } = m.cmd || {};
-            if (kind === 'tap')        { const t = (m.cmd?.role==='P') ? 'C' : 'P'; return window[`__applyStart_${t}`]?.(...(args||[])); }
-            if (kind === 'twoFinger')  { const t = (m.cmd?.role==='P') ? 'C' : 'P'; return window[`__applyCancel_${t}`]?.(); }
-            if (kind === 'closeLoop')  { const t = (m.cmd?.role==='P') ? 'C' : 'P'; return window[`__applyClose_${t}`]?.(); }
+            if (kind === 'tap')        { const t = (window.Net && (m.from === Net._id)) ? 'P' : 'C'; if (m.seq && lastSeqRef.current>=m.seq) return; lastSeqRef.current=m.seq||lastSeqRef.current; return window[`__applyStart_${t}`]?.(...(args||[])); }
+            if (kind === 'twoFinger')  { const t = (window.Net && (m.from === Net._id)) ? 'P' : 'C'; if (m.seq && lastSeqRef.current>=m.seq) return; lastSeqRef.current=m.seq||lastSeqRef.current; return window[`__applyCancel_${t}`]?.(); }
+            if (kind === 'closeLoop')  { const t = (window.Net && (m.from === Net._id)) ? 'P' : 'C'; if (m.seq && lastSeqRef.current>=m.seq) return; lastSeqRef.current=m.seq||lastSeqRef.current; return window[`__applyClose_${t}`]?.(); }
             if (kind === 'start99')   return window.__applyStartMatch?.(args?.[0]);
           
       } finally {
@@ -365,7 +364,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
   useEffect(()=>{
     setGrid(tokensFromColors(colorSeedGrid));
     setPath([]); setStart(null); setActiveColor(null);
-    setIsClosing(false); setClosingArmed(false);
+    setIsClosing(false); setClosingAr(false);
     setCombo(1.0); setScore(0); setAnnouncements([]);
     onPhase?.("NEUTRAL"); onPreparedChange?.(false);
     const setc = new Set();
@@ -376,7 +375,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
   useEffect(()=>{
     if (cancelSignal!=null){
       cancelEpochRef.current += 1;
-      setIsClosing(false); setClosingArmed(false);
+      setIsClosing(false); setClosingAr(false);
       setPath([]); setStart(null); setActiveColor(null);
       onPhase?.("NEUTRAL"); onPreparedChange?.(false);
     }
@@ -419,7 +418,7 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
 
   function pushAnnounce(text){ const item={ id: Date.now()+Math.random(), text, ts: Date.now() }; setAnnouncements(a=> [item, ...a].slice(0,6)); setTimeout(()=>{ setAnnouncements(a=> a.filter(x=>x.id!==item.id)); }, 4000); }
   function armComboReset(){ if(comboTimer.current) window.clearTimeout(comboTimer.current); comboTimer.current = window.setTimeout(()=>setCombo(1.0), SCORE_CFG.comboResetMs); }
-  function resetPath(){ setPath([]); setStart(null); setActiveColor(null); setIsClosing(false); setClosingArmed(false); onPhase?.("NEUTRAL"); onPreparedChange?.(false); }
+  function resetPath(){ setPath([]); setStart(null); setActiveColor(null); setIsClosing(false); setClosingAr(false); onPhase?.("NEUTRAL"); onPreparedChange?.(false); }
 
   function canTapColor(token, r, c){
     if (locked) return false;
@@ -457,13 +456,13 @@ function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScor
     function onWinMouseUp(e){
       if (e.button === 0) {
         if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
-        setLeftDown(false); setClosingArmed(false);
+        setLeftDown(false); setClosingAr(false);
       }
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
       if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
-      setLeftDown(false); setClosingArmed(false);
+      setLeftDown(false); setClosingAr(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
     return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
@@ -503,7 +502,7 @@ function handleContext(e){
     if (leftDown){
       if (closingArmed){
         setIsClosing(false);
-        setClosingArmed(false);
+        setClosingAr(false);
       } else {
         setPath(p => (p.length>1 ? p.slice(0,-1) : p));
       }
@@ -708,7 +707,7 @@ function handleContext(e){
                     setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
-                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    if (closingArmed){ setIsClosing(false); setClosingAr(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
                     else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
                   }
                 },
@@ -1582,12 +1581,8 @@ function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<VersusSprites />);
 </script>
+  <script src="client_online_adapter_snippet.js?v=7"></script>
+  <script src="online_start_helper_v4.js?v=6"></script>
   <script src="net_debug_overlay.js?v=1"></script>
   <script src="online_lockstep_hotfix.js?v=1"></script>
-
-  <!-- Online adapter + hotfix + host-only start button -->
-  <script defer src="client_online_adapter_snippet_v8.js?v=20250814a"></script>
-  <script defer src="online_lockstep_hotfix.js?v=20250814a"></script>
-  <script defer src="online_start_helper_v5.js?v=20250814a"></script>
-
 </body></html>
