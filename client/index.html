@@ -282,13 +282,21 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
             return;
           }
           if (m.type === 'cmd'){
+      const __prevReplaying = window.__REPLAYING;
+      window.__REPLAYING = true;
+      try {
+
             // Ignore own echo
             if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
             const { kind, args } = m.cmd || {};
             if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
             if (kind === 'twoFinger')  return window.__applyCancelLast?.();
             if (kind === 'closeLoop')  return window.__applyClose?.();
-          }
+          
+      } finally {
+        window.__REPLAYING = __prevReplaying;
+      }
+}
         };
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
