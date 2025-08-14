@@ -320,20 +320,16 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     };
     window.__applyClose = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
 
-    // Auto-connect if URL has ?room= & optional &ws=
+    \1// Auto-connect if URL has ?room= & optional &ws=
     try{
       const u = new URL(window.location.href);
       const room = u.searchParams.get('room');
       const ws   = u.searchParams.get('ws');
-      if (ws) window.NET_WS_URL = ws; // adapter reads this
-      if (room && window.Net){
-        Net.connect(room);
-        Net.onMessage = (m) => {
-          if (m.type === 'joined'){ onlineRef.current.myId = m.id; return; }
-          if (m.type === 'start' && window.__applyStartMatch){
-            window.__applyStartMatch(m.payload);
-            return;
-          }
+      if (room && window.Net && typeof Net.connect === 'function'){
+        if (ws) Net.connect(room, ws); else Net.connect(room);
+      }
+    }catch(e){ console.warn('[auto-connect]', e); }
+
           
 if (m.type === 'cmd'){
   // Deterministic order: queue by seq if present
