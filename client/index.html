@@ -271,7 +271,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   };
   window['__applyClose_' + __k] = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
 })();
-\2 if URL has ?room= & optional &ws=
+// Auto-connect if URL has ?room= & optional &ws=
     try{
       const u = new URL(window.location.href);
       const room = u.searchParams.get('room');
@@ -795,8 +795,7 @@ function sampleDistinct(arr, m){ if (arr.length<m) return null; const idxs=new S
 function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
 
 /** =================== App =================== */
-\1
-  const isOnlineRoom = (()=>{ try{ const u=new URL(window.location.href); return !!u.searchParams.get('room'); }catch(e){ return false; } })();
+// const isOnlineRoom = (()=>{ try{ const u=new URL(window.location.href); return !!u.searchParams.get('room'); }catch(e){ return false; } })();
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [colorCount, setColorCount] = useState(5);
