@@ -255,7 +255,7 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 }
 
 /** =================== Board =================== */
-function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
+function Board({ side='P', label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
   const [onlineConnected, setOnlineConnected] = useState(false);
@@ -263,11 +263,37 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   useEffect(() => {
     window.__REPLAYING = false;
     // Expose local apply API for remote commands
-    window.__applyStart = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyExtend = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyCancelLast = () => { 
-      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
-      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+    
+    // Expose per-side apply functions
+    const __startKey   = side==='P' ? '__applyStart_P'   : '__applyStart_C';
+    const __cancelKey  = side==='P' ? '__applyCancel_P'  : '__applyCancel_C';
+    const __closeKey   = side==='P' ? '__applyClose_P'   : '__applyClose_C';
+    // Backward-compat aliases (point to PLAYER side)
+    if (side==='P'){
+      window.__applyStart = window[__startKey];
+      window.__applyCancelLast = window[__cancelKey];
+      window.__applyClose = window[__closeKey];
+    }
+    
+
+    window[__startKey] = (r,c) => { 
+      onCellTap(r,c); 
+      // Only the local player ('P') should broadcast their own taps
+      if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected){
+        Net.sendCmd({ kind:'tap', role:'P', args:[r,c] });
+      }
     };
-    window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); };
+    window[__cancelKey] = () => { 
+      if (closingArmed){ setIsClosing(false); setClosingArmed(false); setPath(p => (p.length>1 ? p.slice(0,-1) : p)); }
+      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); }
+      if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'twoFinger', role:'P' });
+    };
+    window[__closeKey] = () => { 
+      setIsClosing(true); onPhase? onPhase('CLOSING') : null; 
+      onClosePath();
+      if (!window.__REPLAYING && side==='P' && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'closeLoop', role:'P' });
+    };
+    
 
     // Auto-connect if URL has ?room= & optional &ws=
     try{
@@ -291,9 +317,9 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
             // Ignore own echo
             if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
             const { kind, args } = m.cmd || {};
-            if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
-            if (kind === 'twoFinger')  return window.__applyCancelLast?.();
-            if (kind === 'closeLoop')  return window.__applyClose?.();
+            if (kind === 'tap')        { const t = (m.cmd?.role==='P') ? 'C' : 'P'; return window[`__applyStart_${t}`]?.(...(args||[])); }
+            if (kind === 'twoFinger')  { const t = (m.cmd?.role==='P') ? 'C' : 'P'; return window[`__applyCancel_${t}`]?.(); }
+            if (kind === 'closeLoop')  { const t = (m.cmd?.role==='P') ? 'C' : 'P'; return window[`__applyClose_${t}`]?.(); }
             if (kind === 'start99')   return window.__applyStartMatch?.(args?.[0]);
           
       } finally {
@@ -404,6 +430,8 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   }
 
   function onCellTap(r,c){
+    if (side==='C' && !window.__REPLAYING && onlineRef.current?.connected) return; // block local taps on opponent in online
+
     if (locked) return;
     if (!active && !isCPU) return;
     const token=grid[r][c];
@@ -1408,7 +1436,7 @@ function ensureActive(side){
 
       <div className="w-full max-w-6xl px-4 mb-2 grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
         <div className="flex justify-center">
-          <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
+          <Board side="P" label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (pScoreRef.current += d)} exposeScoreRef={pScoreRef}
                  onPhase={onPPhase} onAttackFrame={onPAttackFrame} onPreparedChange={onPPrepared}
@@ -1477,14 +1505,14 @@ function ensureActive(side){
         </div>
 
         <div className="flex justify-center">
-          <Board label={onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`} isCPU={!onlineConnected} cpuLevel={cpuLevel} active={running}
+          <Board side="C" label={onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`} isCPU={!onlineConnected} cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
                  onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
                  onPalette={()=>{}} onSuperTriangle={()=>{}}
                  onPlannedHits={({hits})=> setCPlannedHits(hits)}
                  onItemClaim={(it)=> tryClaim('C', it)} item={gItem} itemsEnabled={itemsEnabled}
-                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={cCancelSig} locked={cLocked} showDamage={showDamage} />
+                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={cCancelSig} locked={onlineConnected ? true : cLocked} showDamage={showDamage} />
         </div>
       </div>
 
