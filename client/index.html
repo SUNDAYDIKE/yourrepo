@@ -21,6 +21,13 @@
   @keyframes superDash { 0%{ transform: translateX(0) } 100%{ transform: translateX(22px) } }
   @keyframes superDashR { 0%{ transform: translateX(0) } 100%{ transform: translateX(-22px) } }
   @keyframes hitStun { 0%{ transform: translateY(0) scale(1) } 20%{ transform: translateY(-2px) scale(1.04) } 60%{ transform: translateY(1px) scale(0.98) } 100%{ transform: translateY(0) scale(1) } }
+
+/* --- Offline PvP additions --- */
+@media (max-width: 1024px){
+  .vs-two-cols { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)) !important; gap: 1.5rem; }
+}
+.touch-ctrl button{ min-width: 40px; min-height: 40px; }
+
 </style>
 </head>
 <body>
@@ -258,8 +265,6 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
-  const [onlineConnected, setOnlineConnected] = useState(false);
-
   useEffect(() => {
     window.__REPLAYING = false;
     // Expose local apply API for remote commands
@@ -284,26 +289,17 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
             return;
           }
           if (m.type === 'cmd'){
-      const __prevReplaying = window.__REPLAYING;
-      window.__REPLAYING = true;
-      try {
-
             // Ignore own echo
             if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
             const { kind, args } = m.cmd || {};
             if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
             if (kind === 'twoFinger')  return window.__applyCancelLast?.();
             if (kind === 'closeLoop')  return window.__applyClose?.();
-            if (kind === 'start99')   return window.__applyStartMatch?.(args?.[0]);
-          
-      } finally {
-        window.__REPLAYING = __prevReplaying;
-      }
-}
+          }
         };
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
-          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; setOnlineConnected(true); clearInterval(_timer); }
+          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
         }, 300);
       }
     }catch(e){ console.warn(e); }
@@ -434,6 +430,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
+      const now=Date.now(); if (now - lastCloseAtRef.current < 220) { setLeftDown(false); setClosingArmed(false); return; }
       if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
     }
@@ -675,6 +672,7 @@ function handleContext(e){
               const handlers = isCPU ? {} : {
                 onMouseDown: (e)=>{ if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{
+                  const now=Date.now(); if (closingArmed && (now - lastCloseAtRef.current < 220)) return;
                   if (locked) return;
                   if (e.touches.length === 1){
                     setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
@@ -803,8 +801,7 @@ function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
 
 /** =================== App =================== */
 function VersusSprites(){
-  const [onlineConnected, setOnlineConnected] = useState(false);
-
+  const [gameMode, setGameMode] = useState('CPU'); // 'CPU' | 'OFFLINE_PVP'
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [colorCount, setColorCount] = useState(5);
@@ -821,15 +818,6 @@ function VersusSprites(){
 
   const [running, setRunning] = useState(false);
   const [deadline, setDeadline] = useState(null);
-
-  useEffect(()=>{
-    const t = setInterval(()=>{
-      try{
-        if (window.Net && (Net.isHost || Net.sendCmd)){ setOnlineConnected(true); clearInterval(t); }
-      }catch(e){ /* ignore */ }
-    }, 300);
-    return ()=> clearInterval(t);
-  }, []);
   const [remaining, setRemaining] = useState(DURATION_MS);
   const [cpuLevel, setCpuLevel] = useState("NORMAL");
   const [cpuSuperOn, setCpuSuperOn] = useState(false);
@@ -969,42 +957,29 @@ function VersusSprites(){
     claimStateRef.current = { itemId:null, claims:[], timer:null };
   }
 
-  
-  function applyStartMatch(payload){
-    const { seed: sd, rows: rws, cols: cls, colorCount: cc, customGrid: cg, duration: dur } = payload || {};
-    if (typeof rws === 'number') setRows(rws);
-    if (typeof cls === 'number') setCols(cls);
-    if (typeof cc  === 'number') setColorCount(cc);
-    if (cg) setCustomGrid(cg); else setCustomGrid(null);
-    if (typeof sd === 'number') setSeed(sd);
-    const durMs = (typeof dur === 'number' && dur > 0) ? dur : DURATION_MS;
-    setRemaining(durMs); setDeadline(Date.now() + durMs);
+  function startMatch(){
+    setSeed(Math.floor(Math.random()*1e9));
+    setRemaining(DURATION_MS); setDeadline(Date.now()+DURATION_MS);
     pScoreRef.current = 0; cScoreRef.current = 0; resetFight(); setRunning(true);
   }
-  // Expose for online adapter
-  window.__applyStartMatch = applyStartMatch;
 
-function startMatch(){
+  
+  function startCPUMatch(){
+    setGameMode('CPU');
+    startMatch();
+  }
+
+  function startOfflineMatch(){
+    setGameMode('OFFLINE_PVP');
     const payload = {
       seed: Math.floor(Math.random()*1e9),
       rows, cols, colorCount,
       customGrid: customGrid || null,
       duration: DURATION_MS
     };
-    // If online, broadcast start; otherwise just apply locally
-    try {
-      if (!window.__REPLAYING && window.Net && onlineRef.current?.connected){
-        if (typeof Net.sendStart === 'function'){
-          Net.sendStart(payload);
-        } else if (typeof Net.sendCmd === 'function'){
-          Net.sendCmd({ kind: 'start99', args: [payload] });
-        }
-      }
-    } catch (e) { console.warn('start broadcast failed', e); }
     applyStartMatch(payload);
-    }
-
-  const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
+  }
+const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
   function pushImpact(side, amount, kind){
     const ring = { id: Date.now()+Math.random(), size: ringSizeFromDamage(amount), kind };
     if (side==='P'){
@@ -1402,11 +1377,11 @@ function ensureActive(side){
           DMG表示
         </label>
 
-        <button onClick={startMatch} className="ml-3 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm disabled:opacity-50" disabled={running}>Start 99s</button>
+        <button onClick={startCPUMatch} className="ml-3 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm disabled:opacity-50" disabled={running}>Start 99s</button>
         <div className="ml-auto text-lg font-mono">{String(secs).padStart(2, "0")}<span className="text-sm opacity-70">s</span></div>
       </div>
 
-      <div className="w-full max-w-6xl px-4 mb-2 grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+      <div className="w-full max-w-6xl px-4 mb-2 grid vs-two-cols gap-6 items-start">
         <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
@@ -1477,7 +1452,7 @@ function ensureActive(side){
         </div>
 
         <div className="flex justify-center">
-          <Board label={onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`} isCPU={!onlineConnected} cpuLevel={cpuLevel} active={running}
+          <Board label={gameMode==='CPU'?`CPU (${cpuLevel})`:'PLAYER B'} isCPU={gameMode==='CPU'} cpuLevel={cpuLevel} active={running} locked={gameMode==='CPU'?undefined:false}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
                  onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
@@ -1522,6 +1497,30 @@ function ensureActive(side){
               <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
             <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
+
+          {/* Touch-friendly controls (visible on mobile) */}
+          <div className="md:hidden flex items-center gap-4 bg-slate-800/50 rounded-xl p-3 touch-ctrl">
+            <div className="flex items-center gap-2">
+              <span>Rows</span>
+              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.max(6, rows-1); setRows(v); setCustomGrid(null); }}>-</button>
+              <span className="px-2">{rows}</span>
+              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.min(14, rows+1); setRows(v); setCustomGrid(null); }}>+</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>Cols</span>
+              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.max(6, cols-1); setCols(v); setCustomGrid(null); }}>-</button>
+              <span className="px-2">{cols}</span>
+              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.min(12, cols+1); setCols(v); setCustomGrid(null); }}>+</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>Colors</span>
+              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.max(3, colorCount-1); setColorCount(v); }}>-</button>
+              <span className="px-2">{colorCount}</span>
+              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.min(11, colorCount+1); setColorCount(v); }}>+</button>
+            </div>
+          </div>
+          <div className="text-xs text-slate-400">
+          </div>
           </div>
 
           {/* Token matrix (custom) */}
@@ -1557,4 +1556,11 @@ root.render(<VersusSprites />);
   <script src="online_start_helper_v4.js?v=6"></script>
   <script src="net_debug_overlay.js?v=1"></script>
   <script src="online_lockstep_hotfix.js?v=1"></script>
+
+<!-- Offline PvP start button (bottom-right) -->
+<div class="fixed right-3 bottom-3 z-50 pointer-events-none">
+  <button onclick="window.__react_offline && window.__react_offline()" class="pointer-events-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-lg">Offline match</button>
+</div>
+<script>window.__react_offline=null;</script>
+
 </body></html>
