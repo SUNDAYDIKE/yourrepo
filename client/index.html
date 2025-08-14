@@ -21,25 +21,6 @@
   @keyframes superDash { 0%{ transform: translateX(0) } 100%{ transform: translateX(22px) } }
   @keyframes superDashR { 0%{ transform: translateX(0) } 100%{ transform: translateX(-22px) } }
   @keyframes hitStun { 0%{ transform: translateY(0) scale(1) } 20%{ transform: translateY(-2px) scale(1.04) } 60%{ transform: translateY(1px) scale(0.98) } 100%{ transform: translateY(0) scale(1) } }
-
-/* --- Offline PvP additions --- */
-.vs-two-cols { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.5rem; }
-.touch-ctrl button{ min-width: 40px; min-height: 40px; }
-
-/* --- Mobile guards --- */
-.board-surface { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: rgba(0,0,0,0); }
-.vs-two-cols { display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-
-/* layout-locked tweaks */
-@media (max-width: 1200px){
-  .board-surface > * { transform: scale(0.95); transform-origin: top center; }
-}
-@media (max-width: 900px){
-  .board-surface > * { transform: scale(0.90); }
-}
-@media (max-width: 720px){
-  .board-surface > * { transform: scale(0.85); }
-}
 </style>
 </head>
 <body>
@@ -63,8 +44,8 @@ const IMG_PATHS = {
 /** =================== Global Config =================== */
 const CELL = 48;
 const GAP  = 6;
-const DEFAULT_ROWS = 6;
-const DEFAULT_COLS = 6;
+const DEFAULT_ROWS = 10;
+const DEFAULT_COLS = 8;
 const MAX_COLORS = 11;
 
 const BASE5 = ["#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6"];
@@ -123,7 +104,7 @@ function segSegIntersect(p, p2, q, q2){
   return null;
 }
 function buildGraph(points){
-  const segments=[]; for(let i=0;i<points.length;i++){ const a=points[i], b=points[(i+1)%points.length]; segments.push({a,b}
+  const segments=[]; for(let i=0;i<points.length;i++){ const a=points[i], b=points[(i+1)%points.length]; segments.push({a,b}); }
   const splits=segments.map(()=>[0,1]);
   for(let i=0;i<splits.length;i++){
     for(let j=i+1;j<splits.length;j++){
@@ -134,7 +115,7 @@ function buildGraph(points){
     }
   }
   for (let i=0;i<splits.length;i++) splits[i] = Array.from(new Set(splits[i].sort((a,b)=>a-b)));
-  const nodes=[]; const idByKey=new Map(); function getId(p){ const k=p.x.toFixed(4)+","+p.y.toFixed(4); if(!idByKey.has(k)){ idByKey.set(k,nodes.length); nodes.push({x:p.x,y:p.y} return idByKey.get(k); }
+  const nodes=[]; const idByKey=new Map(); function getId(p){ const k=p.x.toFixed(4)+","+p.y.toFixed(4); if(!idByKey.has(k)){ idByKey.set(k,nodes.length); nodes.push({x:p.x,y:p.y}); } return idByKey.get(k); }
   const edges=new Set(); const addEdge=(u,v)=>{ if(u===v) return; const a=Math.min(u,v), b=Math.max(u,v); edges.add(a+","+b); };
   for(let i=0;i<segments.length;i++){
     const s=segments[i], arr=splits[i];
@@ -146,7 +127,7 @@ function buildGraph(points){
     }
   }
   const out=new Map(); const ang=(from,to)=> Math.atan2(nodes[to].y-nodes[from].y, nodes[to].x-nodes[from].x);
-  edges.forEach(ev=>{ const [a,b]=ev.split(",").map(Number); if(!out.has(a)) out.set(a,[]); if(!out.has(b)) out.set(b,[]); out.get(a).push({to:b,ang:ang(a,b)}); out.get(b).push({to:a,ang:ang(b,a)});
+  edges.forEach(ev=>{ const [a,b]=ev.split(",").map(Number); if(!out.has(a)) out.set(a,[]); if(!out.has(b)) out.set(b,[]); out.get(a).push({to:b,ang:ang(a,b)}); out.get(b).push({to:a,ang:ang(b,a)}); });
   out.forEach(arr=> arr.sort((p,q)=> p.ang-q.ang));
   const visited=new Set(); const edgeKey=(u,v)=> u+"->"+v;
   function nextEdge(u,v){ const arr=out.get(v); const angRev=Math.atan2(nodes[u].y-nodes[v].y, nodes[u].x-nodes[v].x); let idx=0; while(idx<arr.length && arr[idx].ang < angRev - EPS) idx++; const nxt=arr[(idx-1+arr.length)%arr.length]; return {from:v,to:nxt.to}; }
@@ -179,7 +160,7 @@ function paletteFromSeed(seed, count){
   const extras=count-5; const rng=mulberry32(seed); const startHue=Math.floor(rng()*360); const golden=137.508; const sat=76, light=52;
   const hues=[]; for(let i=0;i<extras*3;i++) hues.push((startHue+Math.round(i*golden))%360);
   const chosen=BASE5.map(c=> rgbToH(c).h);
-  function farEnough(h){ return chosen.every(ch=>{ let d=Math.abs(h-ch); d=Math.min(d,360-d); return d>=18; }
+  function farEnough(h){ return chosen.every(ch=>{ let d=Math.abs(h-ch); d=Math.min(d,360-d); return d>=18; }); }
   const out=BASE5.slice();
   for(const h of hues){ if (out.length>=count) break; if (farEnough(h)){ out.push(hsl(h,sat,light)); chosen.push(h); } }
   while(out.length<count){ out.push(hsl((startHue+out.length*golden)%360, sat, light)); }
@@ -189,7 +170,7 @@ function rgbToH(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h
 function mulberry32(a){ return function(){ a|=0; a=(a+0x6D2B79F5)|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|a)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
 /** =================== Tokens =================== */
-function makeTokenFactory(){ const nextId={v:1}; return (color)=>({ id: nextId.v++, color }
+function makeTokenFactory(){ const nextId={v:1}; return (color)=>({ id: nextId.v++, color }); }
 const makeToken = makeTokenFactory();
 function colorsSeedGrid(seed, rows, cols, colorCount) {
   const rng = mulberry32(seed);
@@ -275,22 +256,18 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 
 /** =================== Board =================== */
 function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
-    
-  // Mobile double-fire guards
-  const lastGestureAtRef = useRef(0);
-  const suppressMouseUntilRef = useRef(0);
-  const activePointerIdRef = useRef(null);
-const lastCloseAtRef = useRef(0);
-// --- Online (minimal) hooks ---
+  // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
+  const [onlineConnected, setOnlineConnected] = useState(false);
+
   useEffect(() => {
     window.__REPLAYING = false;
     // Expose local apply API for remote commands
-    window.__applyStart = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] };window.__applyExtend = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] };window.__applyCancelLast = () => { 
-      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'} 
-      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}
+    window.__applyStart = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyExtend = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyCancelLast = () => { 
+      if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
+      else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
     };
-    window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'};
+    window.__applyClose   = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); };
 
     // Auto-connect if URL has ?room= & optional &ws=
     try{
@@ -307,17 +284,26 @@ const lastCloseAtRef = useRef(0);
             return;
           }
           if (m.type === 'cmd'){
+      const __prevReplaying = window.__REPLAYING;
+      window.__REPLAYING = true;
+      try {
+
             // Ignore own echo
             if (m.from && onlineRef.current.myId && m.from === onlineRef.current.myId) return;
             const { kind, args } = m.cmd || {};
             if (kind === 'tap')        return window.__applyStart?.(...(args||[]));
             if (kind === 'twoFinger')  return window.__applyCancelLast?.();
             if (kind === 'closeLoop')  return window.__applyClose?.();
-          }
+            if (kind === 'start99')   return window.__applyStartMatch?.(args?.[0]);
+          
+      } finally {
+        window.__REPLAYING = __prevReplaying;
+      }
+}
         };
         // Mark connected when socket opens
         const _timer = setInterval(()=>{
-          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; clearInterval(_timer); }
+          if (Net.isHost || Net.sendCmd){ onlineRef.current.connected = true; setOnlineConnected(true); clearInterval(_timer); }
         }, 300);
       }
     }catch(e){ console.warn(e); }
@@ -376,7 +362,7 @@ const lastCloseAtRef = useRef(0);
     onPalette?.(Array.from(setc));
   }, [grid]);
 
-  const segments = useMemo(()=>{ const segs=[]; for(let i=0;i+1<path.length;i++){ const [r1,c1]=path[i], [r2,c2]=path[i+1]; const p1=centerSquare(r1,c1), p2=centerSquare(r2,c2); segs.push({x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y} return segs; },[path]);
+  const segments = useMemo(()=>{ const segs=[]; for(let i=0;i+1<path.length;i++){ const [r1,c1]=path[i], [r2,c2]=path[i+1]; const p1=centerSquare(r1,c1), p2=centerSquare(r2,c2); segs.push({x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y}); } return segs; },[path]);
 
   const highlightSet = useMemo(()=>{
     const set = new Set();
@@ -441,28 +427,14 @@ const lastCloseAtRef = useRef(0);
   useEffect(() => {
     if (isCPU) return;
     function onWinMouseUp(e){
-      if (e && e.button !== undefined && e.button !== 0) return;
-      const now = Date.now();
-      if (now < suppressMouseUntilRef.current) return;
-      if (!closingArmed) { setLeftDown(false); setClosingArmed(false); return; }
-      if (now - lastCloseAtRef.current < 280) { setLeftDown(false); setClosingArmed(false); return; }
-      lastCloseAtRef.current = now;
-      onPhase?.("ATTACK"); handleLoopClose();
-      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}catch(_){}
-      setLeftDown(false); setClosingArmed(false);
-    }
+      if (e.button === 0) {
+        if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
         setLeftDown(false); setClosingArmed(false);
       }
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
-      const now = Date.now();
-      suppressMouseUntilRef.current = now + 900;
-      if (!closingArmed) { setLeftDown(false); setClosingArmed(false); return; }
-      if (now - lastCloseAtRef.current < 280) { setLeftDown(false); setClosingArmed(false); return; }
-      lastCloseAtRef.current = now;
-      onPhase?.("ATTACK"); handleLoopClose();
-      try{ if (window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}catch(_){}
+      if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
     }
     window.addEventListener('touchend', onWinTouchEnd);
@@ -515,9 +487,6 @@ function handleContext(e){
   }
 
   async function handleLoopClose(){
-    const now_guard = Date.now();
-    if (now_guard - lastCloseAtRef.current < 300) return; // dedupe
-    lastCloseAtRef.current = now_guard;
     const myEpoch = cancelEpochRef.current;
     const vertsRC = [...path];
     const pts = vertsRC.map(([r,c])=> centerSquare(r,c));
@@ -544,7 +513,7 @@ function handleContext(e){
     if (faces.length === 0) {
       onAttackFrame?.({ sides: Math.max(vertsRC.length, 3) });
     } else {
-      await glowFacesSequential(faces, glowMs, (nSides)=> { onAttackFrame?.({ sides: nSides });
+      await glowFacesSequential(faces, glowMs, (nSides)=> { onAttackFrame?.({ sides: nSides }); });
       if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
     }
 
@@ -609,7 +578,7 @@ function handleContext(e){
     Object.entries(fallInfo).forEach(([id, rows]) => { if (rows>0) shiftInit[id] = -rows * pxPerRow; });
     setAnimShift(shiftInit);
     setGrid(finalGrid);
-    requestAnimationFrame(()=> { setAnimShift((m)=>{ const z={...m}; Object.keys(z).forEach(k=> z[k]=0); return z; });
+    requestAnimationFrame(()=> { setAnimShift((m)=>{ const z={...m}; Object.keys(z).forEach(k=> z[k]=0); return z; }); });
     await sleep(FALL_MS);
   }
 
@@ -704,16 +673,15 @@ function handleContext(e){
               const highlighted = highlightSet.has(keyRC(r,c));
               const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
               const handlers = isCPU ? {} : {
-                onMouseDown: (e)=>{ if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] } },
+                onMouseDown: (e)=>{ if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{
-                  const now=Date.now(); if (closingArmed && (now - lastCloseAtRef.current < 220)) return;
                   if (locked) return;
                   if (e.touches.length === 1){
                     setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
-                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}
-                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}
+                    if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
+                    else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
                   }
                 },
               };
@@ -780,7 +748,7 @@ async function planCPUMoveAsync(grid, level, rows, cols, spCfg, timeBudgetMs=8){
     const pts = path.map(([r,c])=> centerSquare(r,c));
     const g = buildGraph(pts);
     const faces = g.faces.length;
-    const segs = []; for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length]; segs.push({a,b}
+    const segs = []; for(let i=0;i<pts.length;i++){ const a=pts[i], b=pts[(i+1)%pts.length]; segs.push({a,b}); }
     let inters = 0; for(let i=0;i<segs.length;i++){ for(let j=i+1;j<segs.length;j++){ if (Math.abs(i-j)<=1 || (i===0 && j===segs.length-1)) continue; if (segSegIntersect(segs[i].a,segs[i].b,segs[j].a,segs[j].b)) inters++; } }
     const toClear = new Set();
     for(let i=0;i<path.length;i++){
@@ -835,12 +803,11 @@ function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
 
 /** =================== App =================== */
 function VersusSprites(){
-  const [gameMode, setGameMode] = useState('CPU'); // 'CPU' | 'OFFLINE_PVP'
+  const [onlineConnected, setOnlineConnected] = useState(false);
+
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [colorCount, setColorCount] = useState(5);
-  useEffect(()=>{ window.__react_offline = ()=> startOfflineMatch(); return ()=>{ if (window.__react_offline) window.__react_offline=null; }; }, []);
-
 
   const [seed, setSeed] = useState(()=> Math.floor(Math.random()*1e9));
 
@@ -854,6 +821,15 @@ function VersusSprites(){
 
   const [running, setRunning] = useState(false);
   const [deadline, setDeadline] = useState(null);
+
+  useEffect(()=>{
+    const t = setInterval(()=>{
+      try{
+        if (window.Net && (Net.isHost || Net.sendCmd)){ setOnlineConnected(true); clearInterval(t); }
+      }catch(e){ /* ignore */ }
+    }, 300);
+    return ()=> clearInterval(t);
+  }, []);
   const [remaining, setRemaining] = useState(DURATION_MS);
   const [cpuLevel, setCpuLevel] = useState("NORMAL");
   const [cpuSuperOn, setCpuSuperOn] = useState(false);
@@ -993,24 +969,42 @@ function VersusSprites(){
     claimStateRef.current = { itemId:null, claims:[], timer:null };
   }
 
-  function startMatch(){
-    setSeed(Math.floor(Math.random()*1e9));
-    setRemaining(DURATION_MS); setDeadline(Date.now()+DURATION_MS);
+  
+  function applyStartMatch(payload){
+    const { seed: sd, rows: rws, cols: cls, colorCount: cc, customGrid: cg, duration: dur } = payload || {};
+    if (typeof rws === 'number') setRows(rws);
+    if (typeof cls === 'number') setCols(cls);
+    if (typeof cc  === 'number') setColorCount(cc);
+    if (cg) setCustomGrid(cg); else setCustomGrid(null);
+    if (typeof sd === 'number') setSeed(sd);
+    const durMs = (typeof dur === 'number' && dur > 0) ? dur : DURATION_MS;
+    setRemaining(durMs); setDeadline(Date.now() + durMs);
     pScoreRef.current = 0; cScoreRef.current = 0; resetFight(); setRunning(true);
   }
+  // Expose for online adapter
+  window.__applyStartMatch = applyStartMatch;
 
-  
-  function startCPUMatch(){
-    setGameMode('CPU');
-    startMatch();
-  }
+function startMatch(){
+    const payload = {
+      seed: Math.floor(Math.random()*1e9),
+      rows, cols, colorCount,
+      customGrid: customGrid || null,
+      duration: DURATION_MS
+    };
+    // If online, broadcast start; otherwise just apply locally
+    try {
+      if (!window.__REPLAYING && window.Net && onlineRef.current?.connected){
+        if (typeof Net.sendStart === 'function'){
+          Net.sendStart(payload);
+        } else if (typeof Net.sendCmd === 'function'){
+          Net.sendCmd({ kind: 'start99', args: [payload] });
+        }
+      }
+    } catch (e) { console.warn('start broadcast failed', e); }
+    applyStartMatch(payload);
+    }
 
-  function startOfflineMatch(){
-    try{ window.__react_offline = startOfflineMatch; }catch(_){ }
-    setGameMode('OFFLINE_PVP');
-    startMatch();
-  }
-const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
+  const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
   function pushImpact(side, amount, kind){
     const ring = { id: Date.now()+Math.random(), size: ringSizeFromDamage(amount), kind };
     if (side==='P'){
@@ -1408,11 +1402,11 @@ function ensureActive(side){
           DMG表示
         </label>
 
-        <button onClick={startCPUMatch} className="ml-3 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm disabled:opacity-50" disabled={running}>Start 99s</button>
+        <button onClick={startMatch} className="ml-3 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm disabled:opacity-50" disabled={running}>Start 99s</button>
         <div className="ml-auto text-lg font-mono">{String(secs).padStart(2, "0")}<span className="text-sm opacity-70">s</span></div>
       </div>
 
-      <div className="w-full max-w-6xl px-4 mb-2 grid grid-cols-2 gap-6 items-start">
+      <div className="w-full max-w-6xl px-4 mb-2 grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
         <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
@@ -1483,7 +1477,7 @@ function ensureActive(side){
         </div>
 
         <div className="flex justify-center">
-          <Board label={gameMode==='CPU'?`CPU (${cpuLevel})`:'PLAYER B'} isCPU={gameMode==='CPU'} cpuLevel={cpuLevel} active={running} locked={gameMode==='CPU'?undefined:false}
+          <Board label={onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`} isCPU={!onlineConnected} cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
                  onPhase={onCPhase} onAttackFrame={onCAttackFrame} onPreparedChange={onCPrepared}
@@ -1528,30 +1522,6 @@ function ensureActive(side){
               <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
             <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
-
-          {/* Touch-friendly controls (visible on mobile) */}
-          <div className="md:hidden flex items-center gap-4 bg-slate-800/50 rounded-xl p-3 touch-ctrl">
-            <div className="flex items-center gap-2">
-              <span>Rows</span>
-              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.max(6, rows-1); setRows(v); setCustomGrid(null); }}>-</button>
-              <span className="px-2">{rows}</span>
-              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.min(14, rows+1); setRows(v); setCustomGrid(null); }}>+</button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>Cols</span>
-              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.max(6, cols-1); setCols(v); setCustomGrid(null); }}>-</button>
-              <span className="px-2">{cols}</span>
-              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.min(12, cols+1); setCols(v); setCustomGrid(null); }}>+</button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>Colors</span>
-              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.max(3, colorCount-1); setColorCount(v); }}>-</button>
-              <span className="px-2">{colorCount}</span>
-              <button className="px-3 py-2 rounded bg-slate-700" onClick={()=>{ if(running) return; const v=Math.min(11, colorCount+1); setColorCount(v); }}>+</button>
-            </div>
-          </div>
-          <div className="text-xs text-slate-400">
-          </div>
           </div>
 
           {/* Token matrix (custom) */}
@@ -1587,11 +1557,4 @@ root.render(<VersusSprites />);
   <script src="online_start_helper_v4.js?v=6"></script>
   <script src="net_debug_overlay.js?v=1"></script>
   <script src="online_lockstep_hotfix.js?v=1"></script>
-
-<!-- Offline PvP start button (bottom-right) -->
-<div class="fixed right-3 bottom-3 z-50 pointer-events-none">
-  <button onclick="window.__react_offline && window.__react_offline()" class="pointer-events-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-lg">Offline match</button>
-</div>
-<script>window.__react_offline=null;</script>
-
 </body></html>
