@@ -319,8 +319,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
       else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (window.Net && onlineRef.current?.connected) if (!suppressSendRef.current && !isCPU && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
     };
     window.__applyClose = () => { setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); };
-
-    \1// Auto-connect if URL has ?room= & optional &ws=
+// // Auto-connect if URL has ?room= & optional &ws=
     try{
       const u = new URL(window.location.href);
       const room = u.searchParams.get('room');
