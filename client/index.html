@@ -797,7 +797,7 @@ function _regionSig(gridAfter, toClearLine, rows, cols){
               const handlers = isCPU ? {} : {
                 onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); onCellTap(r,c); try{ if (canTap) se("tap"); }catch(e){} if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{ recentTouchRef.current = Date.now(); if (locked) return;
-                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); onCellTap(r,c); try{ if (canTap) se("tap"); }catch(e){}
+                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); onCellTap(r,c); try{ if (canTap) se("tap"); }catch(e){} try{ if (canTap) se("tap"); }catch(e){}
                   if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
@@ -982,14 +982,13 @@ function commitCols(val){
     if(!ctx) return;
     if (ctx.state !== "running") { try { ctx.resume(); } catch(_){} }
     const baseNow = ctx.currentTime || 0;
-    const startAt = baseNow + 0.02; // slight offset after resume
-    // click-like envelope
+    const startAt = baseNow + 0.01;
     let f=220, type="sine", amp=0.18, dur=0.14, attack=0.006, release=0.05;
-    if(kind==="attack"){ f=260; type="triangle"; amp=0.22; dur=0.22; attack=0.01; release=0.08; }
-    else if(kind==="hit"){ f=200; type="square"; amp=0.24; dur=0.18; attack=0.01; release=0.08; }
-    else if(kind==="guard"){ f=520; type="sawtooth"; amp=0.18; dur=0.16; attack=0.008; release=0.06; }
-    else if(kind==="clash"){ f=340; type="square"; amp=0.20; dur=0.16; attack=0.008; release=0.06; }
-    else if(kind==="tap"){ f=1000; type="triangle"; amp=0.22; dur=0.10; attack=0.004; release=0.05; }
+    if(kind==="attack"){ f=260; type="triangle"; amp=0.22; dur=0.22; attack=0.010; release=0.080; }
+    else if(kind==="hit"){ f=160; type="square"; amp=0.24; dur=0.22; attack=0.010; release=0.080; }
+    else if(kind==="guard"){ f=420; type="sawtooth"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
+    else if(kind==="clash"){ f=300; type="square"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
+    else if(kind==="tap"){ f=1100; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type; osc.frequency.setValueAtTime(f, startAt);
@@ -1002,6 +1001,7 @@ function commitCols(val){
     osc.stop(startAt + Math.max(attack+release, dur));
   } catch(e){}
 }
+
 
 
 
@@ -1154,6 +1154,8 @@ function commitCols(val){
   window.__applyStartMatch = applyStartMatch;
 
 function startMatch(){
+  try{ if (typeof se==="function") se("tap"); }catch(e){}
+
     const payload = {
       seed: Math.floor(Math.random()*1e9),
       rows, cols, colorCount,
