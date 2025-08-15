@@ -42,7 +42,12 @@
 
 </style>
 
+
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 </head>
+
 <body>
 <div id="root"></div>
 
@@ -340,6 +345,8 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   const [isClosing, setIsClosing] = useState(false);
   const [glowFaces, setGlowFaces] = useState([]);
   const [animShift, setAnimShift] = useState({});
+  const paletteRef = useRef([]);
+  const colRngsRef = useRef(null);
   const seedOffRef = useRef(Array(cols).fill(0));
 
   const [combo, setCombo] = useState(1.0);
@@ -391,7 +398,9 @@ useEffect(()=>{
   useEffect(()=>{
     const setc = new Set();
     for (const row of grid) for (const cell of row) if (cell) setc.add(cell.color);
-    onPalette?.(Array.from(setc));
+    const pal = Array.from(setc);
+    paletteRef.current = pal;
+    onPalette?.(pal);
   }, [grid]);
 
   const segments = useMemo(()=>{ const segs=[]; for(let i=0;i+1<path.length;i++){ const [r1,c1]=path[i], [r2,c2]=path[i+1]; const p1=centerSquare(r1,c1), p2=centerSquare(r2,c2); segs.push({x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y}); } return segs; },[path]);
