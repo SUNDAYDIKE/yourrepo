@@ -340,21 +340,11 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   const [isClosing, setIsClosing] = useState(false);
   const [glowFaces, setGlowFaces] = useState([]);
   const [animShift, setAnimShift] = useState({});
-  const seedOffRef = useRef(Array(cols).fill(0));
 
   const [combo, setCombo] = useState(1.0);
   const comboTimer = useRef(null);
   const [announcements, setAnnouncements] = useState([]);
   const boardRef = useRef(null); // DOM for board area
-
-useEffect(()=>{
-  if (!Array.isArray(seedOffRef.current) || seedOffRef.current.length !== cols){
-    const arr = seedOffRef.current || [];
-    const next = Array(cols).fill(0);
-    for(let c=0;c<Math.min(arr.length, cols);c++){ next[c] = arr[c] % Math.max(1, rows); }
-    seedOffRef.current = next;
-  }
-}, [cols, rows]);
   const [blink, setBlink] = useState(false);
   useEffect(()=>{ const id=setInterval(()=> setBlink(b=>!b), BLINK_MS); return ()=> clearInterval(id); },[]);
 
