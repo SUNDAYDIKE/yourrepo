@@ -976,7 +976,31 @@ function commitCols(val){
   const audioCtxRef = useRef(null);
   function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
     if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
-  function se(kind){ try { if(!seOn) return; const ctx=getAudioCtx(); if(!ctx) return; const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.connect(gain).connect(ctx.destination); const now=ctx.currentTime; let f=220, t="sine", amp=0.22, dur=0.22, a=0.02; if(kind==="attack"){ f=260; t="triangle"; amp=0.22; dur=0.22; a=0.02; } else if(kind==="hit"){ f=160; t="square"; amp=0.24; dur=0.22; a=0.02; } else if(kind==="guard"){ f=420; t="sawtooth"; amp=0.18; dur=0.18; a=0.015; } else if(kind==="clash"){ f=300; t="square"; amp=0.18; dur=0.18; a=0.015; } else if(kind==="tap"){ f=480; t="sine"; amp=0.06; dur=0.12; a=0.008; } osc.type=t; osc.frequency.setValueAtTime(f, now); gain.gain.setValueAtTime(0.001, now); gain.gain.exponentialRampToValueAtTime(amp, now+a); gain.gain.exponentialRampToValueAtTime(0.001, now+dur); osc.start(now); osc.stop(now+dur); } catch(e){} }
+  function se(kind){
+  try {
+    if(!seOn) return;
+    const ctx = getAudioCtx();
+    if(!ctx) return;
+    const now = ctx.currentTime;
+    // use short click-like sound for tap; avoid exponential ramps to zero (Safari issues)
+    let f=220, type="sine", amp=0.18, dur=0.18, attack=0.008, release=0.06;
+    if(kind==="attack"){ f=260; type="triangle"; amp=0.22; dur=0.22; attack=0.01; release=0.08; }
+    else if(kind==="hit"){ f=160; type="square"; amp=0.24; dur=0.22; attack=0.01; release=0.10; }
+    else if(kind==="guard"){ f=420; type="sawtooth"; amp=0.18; dur=0.18; attack=0.008; release=0.06; }
+    else if(kind==="clash"){ f=300; type="square"; amp=0.18; dur=0.18; attack=0.008; release=0.06; }
+    else if(kind==="tap"){ f=880; type="triangle"; amp=0.16; dur=0.10; attack=0.006; release=0.05; }
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(f, now);
+    osc.connect(gain).connect(ctx.destination);
+    const g = gain.gain;
+    g.setValueAtTime(0.0001, now);
+    g.linearRampToValueAtTime(amp, now + attack);
+    g.linearRampToValueAtTime(0.0001, now + Math.max(attack+0.01, dur));
+    osc.start(now);
+    osc.stop(now + Math.max(attack+release, dur));
+  } catch(e){}
+}
 
 
   const pScoreRef = useRef(0); const cScoreRef = useRef(0);
