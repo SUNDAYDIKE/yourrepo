@@ -287,7 +287,7 @@ function FighterSprite({ state='NEUTRAL', side='LEFT', attackIndex=0, rings=[], 
 }
 
 /** =================== Board =================== */
-function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage }) {
+function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeScoreRef, onPhase, onAttackFrame, onPreparedChange, onPalette, onSuperTriangle, onPlannedHits, onItemClaim, item, itemsEnabled, glowMs, rows, cols, cancelSignal, locked, showDamage, onSelectSE}) {
   // --- Online (minimal) hooks ---
   const onlineRef = useRef({ connected:false, myId:null });
   const [onlineConnected, setOnlineConnected] = useState(false);
@@ -478,10 +478,12 @@ useEffect(()=>{
     const color=token?.color;
     if(!start){
       setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true);
+try{ if(!window.__REPLAYING) onSelectSE && onSelectSE(); }catch(_){}
 return;
     }
     if(r===start[0] && c===start[1]){
       if(path.length>=3){
+        try{ if(!window.__REPLAYING) onSelectSE && onSelectSE(); }catch(_){}
         if (isCPU) { setIsClosing(true); handleLoopClose(); }
         else { setIsClosing(true); setClosingArmed(true); }
       } else { pushAnnounce("3点以上でループ"); }
@@ -490,21 +492,10 @@ return;
     if(!color || color!==activeColor) return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
+try{ if(!window.__REPLAYING) onSelectSE && onSelectSE(); }catch(_){}
 }
 
-  
-  // SE: fire when visual selection increases (path length grows)
-  useEffect(() => {
-    try{
-      if (!seOn) return;
-      if (window.__REPLAYING) return;
-      const prev = prevPathLenRef.current|0;
-      const cur = Array.isArray(path) ? path.length|0 : 0;
-      if (cur > prev) { se("select"); }
-      prevPathLenRef.current = cur;
-    }catch(_){}
-  }, [path && path.length, seOn]);
-// window mouseup: close if armed
+  // window mouseup: close if armed
   useEffect(() => {
     if (isCPU) return;
     function onWinMouseUp(e){
@@ -513,12 +504,16 @@ return;
         if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
         setLeftDown(false); setClosingArmed(false);
       }
+    
+      // selection SE is now handled in onCellTap()
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
       recentTouchRef.current = Date.now();
       if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
+    
+      // selection SE is now handled in onCellTap()
     }
     window.addEventListener('touchend', onWinTouchEnd);
     return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
@@ -984,10 +979,11 @@ function commitCols(val){
   const [showDamage, setShowDamage] = useState(true);
   const [seOn, setSeOn] = useState(true);
   const audioCtxRef = useRef(null);
-  const prevPathLenRef = useRef(0);
+  const selectedRef = useRef(false);
   function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
     if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
-  function se(kind){
+  const seState = { lastAny: 0, lastStrong: 0, lastSelect: 0 };
+function se(kind){
   try {
     if(!seOn) return;
     const ctx = getAudioCtx();
@@ -996,12 +992,28 @@ function commitCols(val){
     const baseNow = ctx.currentTime || 0;
     const startAt = baseNow + 0.01;
     let f=220, type="sine", amp=0.18, dur=0.14, attack=0.006, release=0.05;
-    if(kind==="attack"){ f=260; type="triangle"; amp=0.22; dur=0.22; attack=0.010; release=0.080; }
+    if(kind==="attack"){ f=260; 
+    // --- simple overlap control ---
+    try {
+      const now = ctx.currentTime || 0;
+      const isStrong = (kind==="attack"||kind==="hit"||kind==="guard"||kind==="clash"||kind==="tap");
+      if (kind==="select"){
+        const sinceStrong = now - seState.lastStrong;
+        const sinceSelect = now - seState.lastSelect;
+        if (sinceStrong < 0.12 || sinceSelect < 0.06){
+          return; // avoid overlap with stronger SE or too-dense select beeps
+        }
+      }
+      if (isStrong) seState.lastStrong = now;
+      seState.lastAny = now;
+      if (kind==="select") seState.lastSelect = now;
+    } catch(_) {}
+    type="triangle"; amp=0.22; dur=0.22; attack=0.010; release=0.080; }
     else if(kind==="hit"){ f=160; type="square"; amp=0.24; dur=0.22; attack=0.010; release=0.080; }
     else if(kind==="guard"){ f=420; type="sawtooth"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
     else if(kind==="clash"){ f=300; type="square"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
     else if(kind==="tap"){ f=1100; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
-    else if(kind==="select"){ f=900; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
+    else if(kind==="select"){ f=660; type="triangle"; amp=0.22; dur=0.08; attack=0.003; release=0.045; }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type; osc.frequency.setValueAtTime(f, startAt);
@@ -1615,7 +1627,7 @@ function ensureActive(side){
                  onPalette={setPPalette} onSuperTriangle={onPlayerSuperTriangle}
                  onPlannedHits={({hits})=> setPPlannedHits(hits)}
                  onItemClaim={(it)=> tryClaim('P', it)} item={gItem} itemsEnabled={itemsEnabled}
-                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={pCancelSig} locked={pLocked} showDamage={showDamage} />
+                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={pCancelSig} locked={pLocked} showDamage={showDamage}  onSelectSE={() => se("select")} />
         </div>
 
         {/* Center area; clash placed near Player HP bar right edge (+offset) */}
@@ -1684,7 +1696,7 @@ function ensureActive(side){
                  onPalette={()=>{}} onSuperTriangle={()=>{}}
                  onPlannedHits={({hits})=> setCPlannedHits(hits)}
                  onItemClaim={(it)=> tryClaim('C', it)} item={gItem} itemsEnabled={itemsEnabled}
-                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={cCancelSig} locked={cLocked} showDamage={showDamage} />
+                 glowMs={glowMs} rows={rows} cols={cols} cancelSignal={cCancelSig} locked={cLocked} showDamage={showDamage}  onSelectSE={() => se("select")} />
         </div>
       </div>
     </div>
