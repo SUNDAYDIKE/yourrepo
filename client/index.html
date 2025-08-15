@@ -351,6 +351,23 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   const [animShift, setAnimShift] = useState({});
   const paletteRef = useRef([]);
   const colRngsRef = useRef(null);
+
+// Persistent per-column RNGs (do not reseed per clear)
+useEffect(()=>{
+  if (!colRngsRef.current || colRngsRef.current.length !== cols){
+    // seed from crypto if possible, else Math.random
+    let seeds = [];
+    try{
+      if (window.crypto && window.crypto.getRandomValues){
+        const arr = new Uint32Array(cols); window.crypto.getRandomValues(arr);
+        seeds = Array.from(arr);
+      }
+    }catch(_){}
+    while (seeds.length < cols){ seeds.push(Math.floor(Math.random()*0xFFFFFFFF)>>>0); }
+    colRngsRef.current = Array.from({length: cols}, (_,i)=> mulberry32(seeds[i]>>>0));
+  }
+}, [cols]);
+
   const spawnNonceRef = useRef(0);
   const lastSpawnSigRef = useRef(Array(cols).fill("")); // prev column spawn sig
   const lastRegionSigRef = useRef("");
@@ -624,12 +641,25 @@ function handleContext(e){
         fallInfo[s.token.id] = s.fromRow - writeRow;
         writeRow--;
       }
-      for(let r=0;r<spawn;r++){
-        const t = makeToken(colorSeedGrid[r][c]);
-        finalGrid[r][c] = t;
-        fallInfo[t.id] = r + 1;
-      }
-    }
+      
+// Persistent RNG-based spawn per column
+const __rng_col = (colRngsRef.current && colRngsRef.current[c]) ? colRngsRef.current[c] : mulberry32(((Date.now()^c)>>>0));
+// Build palette for this column from seed grid (fallback to unique colors in grid if needed)
+let pal = [];
+for (let rr=0; rr<rows; rr++){ const cc = colorSeedGrid[rr]?.[c]; if (cc) pal.push(cc); }
+if (!pal.length){
+  const setc = new Set();
+  for (let rr=0; rr<rows; rr++){ const t = srcGrid[rr]?.[c]; if (t) setc.add(String(t.color)); }
+  pal = Array.from(setc);
+}
+if (!pal.length){ pal = ['#FFFFFF']; }
+for(let r=0; r<spawn; r++){
+  const pick = pal[Math.floor(__rng_col()*pal.length) % pal.length];
+  const t = makeToken(pick);
+  finalGrid[r][c] = t;
+  fallInfo[t.id] = r + 1;
+}
+}
     return { finalGrid, fallInfo };
   }
 
@@ -1686,7 +1716,7 @@ console.log('App version', APP_VERSION);
   <script src="online_lockstep_hotfix.js?v=1">console.log('App version', APP_VERSION);
 </script>
 </body></html>
-const APP_VERSION = '1.09';
+const APP_VERSION = '1.10';
 function tryLandscapeLock(){
   const el = document.documentElement;
   try {
