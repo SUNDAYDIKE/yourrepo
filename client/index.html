@@ -795,10 +795,11 @@ function _regionSig(gridAfter, toClearLine, rows, cols){
               const highlighted = highlightSet.has(keyRC(r,c));
               const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
               const handlers = isCPU ? {} : {
-                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); onCellTap(r,c); try{ if (canTap) se("select"); }catch(e){} if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
+                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); try{ if (canTap) se("select"); }catch(e){}
+                onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{ recentTouchRef.current = Date.now(); if (locked) return;
-                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); onCellTap(r,c); try{ if (canTap) se("select"); }catch(e){} try{ if (canTap) se("tap"); }catch(e){}
-                  if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); try{ if (canTap) se("select"); }catch(e){}
+                  onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
                     if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
