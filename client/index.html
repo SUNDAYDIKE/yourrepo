@@ -478,8 +478,6 @@ useEffect(()=>{
     const color=token?.color;
     if(!start){
       setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true);
-selectedRef.current = true;
-playSelectSe();
 return;
     }
     if(r===start[0] && c===start[1]){
@@ -492,11 +490,21 @@ return;
     if(!color || color!==activeColor) return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
-selectedRef.current = true;
-playSelectSe();
 }
 
-  // window mouseup: close if armed
+  
+  // SE: fire when visual selection increases (path length grows)
+  useEffect(() => {
+    try{
+      if (!seOn) return;
+      if (window.__REPLAYING) return;
+      const prev = prevPathLenRef.current|0;
+      const cur = Array.isArray(path) ? path.length|0 : 0;
+      if (cur > prev) { se("select"); }
+      prevPathLenRef.current = cur;
+    }catch(_){}
+  }, [path && path.length, seOn]);
+// window mouseup: close if armed
   useEffect(() => {
     if (isCPU) return;
     function onWinMouseUp(e){
@@ -505,18 +513,12 @@ playSelectSe();
         if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
         setLeftDown(false); setClosingArmed(false);
       }
-    
-      try{ if(selectedRef.current && !window.__REPLAYING) se('select'); }catch(_){}
-      selectedRef.current = false;
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
       recentTouchRef.current = Date.now();
       if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
-    
-      try{ if(selectedRef.current && !window.__REPLAYING) se('select'); }catch(_){}
-      selectedRef.current = false;
     }
     window.addEventListener('touchend', onWinTouchEnd);
     return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
@@ -805,9 +807,9 @@ function _regionSig(gridAfter, toClearLine, rows, cols){
               const highlighted = highlightSet.has(keyRC(r,c));
               const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
               const handlers = isCPU ? {} : {
-                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); playSelectSe(); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
+                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{ recentTouchRef.current = Date.now(); if (locked) return;
-                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); playSelectSe(); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
                     if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
@@ -982,17 +984,8 @@ function commitCols(val){
   const [showDamage, setShowDamage] = useState(true);
   const [seOn, setSeOn] = useState(true);
   const audioCtxRef = useRef(null);
-  const selectedRef = useRef(false);
-  const lastSelectSeAtRef = useRef(0);
-  function playSelectSe(){
-    try{
-      if(!seOn) return;
-      const now = (typeof performance!=="undefined" && performance && performance.now) ? performance.now() : Date.now();
-      if (now - lastSelectSeAtRef.current < 120) return; // debounce ~120ms to avoid double
-      lastSelectSeAtRef.current = now;
-      if (!window.__REPLAYING) se("select");
-    }catch(_){}
-  }function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
+  const prevPathLenRef = useRef(0);
+  function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
     if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
   function se(kind){
   try {
@@ -1008,7 +1001,7 @@ function commitCols(val){
     else if(kind==="guard"){ f=420; type="sawtooth"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
     else if(kind==="clash"){ f=300; type="square"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
     else if(kind==="tap"){ f=1100; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
-    else if(kind==="select"){ f=1000; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
+    else if(kind==="select"){ f=900; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type; osc.frequency.setValueAtTime(f, startAt);
