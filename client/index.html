@@ -40,14 +40,6 @@
   .landscape-required{ display:block !important; }
 }
 
-
-@media (max-width: 980px){
-  .vs-row{ gap: 2rem !important; }
-}
-@media (max-width: 760px){
-  .vs-row{ gap: 1.25rem !important; }
-}
-
 </style>
 
 </head>
@@ -364,6 +356,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   useEffect(()=>{ if(exposeScoreRef) exposeScoreRef.current = score; },[score, exposeScoreRef]);
 
   const cancelEpochRef = useRef(0);
+  const closeOnceRef = useRef(false);
 
   useEffect(()=>{
     setGrid(tokensFromColors(colorSeedGrid));
@@ -482,8 +475,8 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     if (!br) return;
     const x = e.clientX, y = e.clientY;
     const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
-    if (!inside && start && path.length>=3){
-      e.preventDefault();
+    if (!inside && start && path.length>=3 && !closeOnceRef.current){
+      e.preventDefault(); closeOnceRef.current = true;
       setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
     }
   }
@@ -496,8 +489,8 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
     if (!br) return;
     const x = t.clientX, y = t.clientY;
     const inside = (x>=br.left && x<=br.right && y>=br.top && y<=br.bottom);
-    if (!inside && start && path.length>=3){
-      e.preventDefault();
+    if (!inside && start && path.length>=3 && !closeOnceRef.current){
+      e.preventDefault(); closeOnceRef.current = true;
       setIsClosing(true); onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'});
     }
   }
@@ -520,7 +513,9 @@ function handleContext(e){
   }
 
   async function handleLoopClose(){
-    const myEpoch = cancelEpochRef.current;
+    const _guardWas = closeOnceRef.current; closeOnceRef.current = true;
+    try {
+      const myEpoch = cancelEpochRef.current;
     const vertsRC = [...path];
     const pts = vertsRC.map(([r,c])=> centerSquare(r,c));
     const { faces } = buildGraph(pts);
@@ -547,10 +542,10 @@ function handleContext(e){
       onAttackFrame?.({ sides: Math.max(vertsRC.length, 3) });
     } else {
       await glowFacesSequential(faces, glowMs, (nSides)=> { onAttackFrame?.({ sides: nSides }); });
-      if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+      if (cancelEpochRef.current !== myEpoch) { resetPath(); closeOnceRef.current=false; return; }
     }
 
-    if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+    if (cancelEpochRef.current !== myEpoch) { resetPath(); closeOnceRef.current=false; return; }
 
     const toClearLine = new Set();
     for(let i=0;i<vertsRC.length;i++){
@@ -569,13 +564,13 @@ function handleContext(e){
     onScore?.(gained);
     setScore(s=> s+gained); pushAnnounce("+" + gained + " 点");
 
-    if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+    if (cancelEpochRef.current !== myEpoch) { resetPath(); closeOnceRef.current=false; return; }
     await applyClearAndGravityAnimated(toClearLine, rows, cols, colorSeedGrid);
-    if (cancelEpochRef.current !== myEpoch) { resetPath(); return; }
+    if (cancelEpochRef.current !== myEpoch) { resetPath(); closeOnceRef.current=false; return; }
 
     setCombo(c=> Number((c + SCORE_CFG.comboStep).toFixed(2))); armComboReset(); resetPath();
-  }
-
+  } finally { closeOnceRef.current = false; }
+}
   function applyClearAndGravitySync(toClearLine, rows, cols, colorSeedGrid){
     const finalGrid = Array.from({ length: rows }, () => Array(cols).fill(null));
     const fallInfo = {};
@@ -838,6 +833,8 @@ function VersusSprites(){
 
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [cols, setCols] = useState(DEFAULT_COLS);
+  const [rowsInput, setRowsInput] = useState(String(DEFAULT_ROWS));
+  const [colsInput, setColsInput] = useState(String(DEFAULT_COLS));
   const [colorCount, setColorCount] = useState(5);
 
   const [seed, setSeed] = useState(()=> Math.floor(Math.random()*1e9));
@@ -862,11 +859,31 @@ function VersusSprites(){
     return ()=> clearInterval(t);
   }, []);
   const [remaining, setRemaining] = useState(DURATION_MS);
+
+useEffect(()=>{ setRowsInput(String(rows)); }, [rows]);
+useEffect(()=>{ setColsInput(String(cols)); }, [cols]);
+function commitRows(val){
+  const num = Math.max(6, Math.min(14, Number(val)||DEFAULT_ROWS));
+  setRows(num); setCustomGrid(null);
+}
+function commitCols(val){
+  const num = Math.max(6, Math.min(12, Number(val)||DEFAULT_COLS));
+  setCols(num); setCustomGrid(null);
+}
+
   const [cpuLevel, setCpuLevel] = useState("NORMAL");
   const [rightHuman, setRightHuman] = useState(false);
   const [cpuSuperOn, setCpuSuperOn] = useState(false);
   const [itemsEnabled, setItemsEnabled] = useState(false);
   const [showDamage, setShowDamage] = useState(true);
+  const [seOn, setSeOn] = useState(true);
+  const audioCtxRef = useRef(null);
+  function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
+    if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
+  function se(kind){ try { if(!seOn) return; const ctx=getAudioCtx(); if(!ctx) return; const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.connect(gain).connect(ctx.destination);
+    const now=ctx.currentTime; let f=220, t="sine"; if(kind==="attack"){ f=260; t="triangle"; } else if(kind==="hit"){ f=160; t="square"; } else if(kind==="guard"){ f=420; t="sawtooth"; } else if(kind==="clash"){ f=300; t="square"; }
+    osc.type=t; osc.frequency.setValueAtTime(f, now); gain.gain.setValueAtTime(0.001, now); gain.gain.exponentialRampToValueAtTime(0.22, now+0.02); gain.gain.exponentialRampToValueAtTime(0.001, now+0.20); osc.start(now); osc.stop(now+0.22); } catch(e){} }
+
 
   const pScoreRef = useRef(0); const cScoreRef = useRef(0);
 
@@ -1037,7 +1054,7 @@ function startMatch(){
     }
 
   const ringSizeFromDamage = (amount) => { const s=40 + Math.sqrt(Math.max(1, amount)) * 22; return Math.max(60, Math.min(180, Math.round(s))); };
-  function pushImpact(side, amount, kind){
+  function pushImpact(side, amount, kind){ if (kind==='HIT') se('hit'); else if (kind==='GUARD' || kind==='BARRIER') se('guard');
     const ring = { id: Date.now()+Math.random(), size: ringSizeFromDamage(amount), kind };
     if (side==='P'){
       setPRings(list=> [...list, ring]);
@@ -1151,7 +1168,7 @@ function ensureActive(side){
     }, ms);
   }
 
-  function doClash(pA, pB){
+  function doClash(pA, pB){ se('clash');
     placeClashAtPlayerHP();
     withTempAttack(220); // keep attack pose during clash
     setClashFlash(true);
@@ -1160,13 +1177,13 @@ function ensureActive(side){
     if (diff>0){
       const op='C'; const barrier=hasBarrier(op); const amt=Math.abs(diff); const dmg=Math.ceil(amt * (barrier ? BARRIER_REDUCTION : 1));
       pushImpact(op, dmg, barrier ? 'BARRIER' : 'HIT'); if (showDamage) pushFloat(op, dmg, barrier ? 'GUARD' : 'HIT'); damage(op, dmg);
-      if (!barrier) setTempView(op, 'HIT', HIT_STUN_MS);
-    }
+      /* clash: skip hurt pose */
+}
     else if (diff<0){
       const op='P'; const barrier=hasBarrier(op); const amt=Math.abs(diff); const dmg=Math.ceil(amt * (barrier ? BARRIER_REDUCTION : 1));
       pushImpact(op, dmg, barrier ? 'BARRIER' : 'HIT'); if (showDamage) pushFloat(op, dmg, barrier ? 'GUARD' : 'HIT'); damage(op, dmg);
-      if (!barrier) setTempView(op, 'HIT', HIT_STUN_MS);
-    }
+      /* clash: skip hurt pose */
+}
     setPStreak(0); setCStreak(0); setPBanner(null); setCBanner(null);
     setPPlannedHits(v=> Math.max(0, v-1));
     setCPlannedHits(v=> Math.max(0, v-1));
@@ -1234,8 +1251,8 @@ function ensureActive(side){
   function onCPhase(s){ _setCState(s); if (s==='NEUTRAL' || s==='PREP' || s==='ATTACK') cPostureRef.current = s; cViewRef.current=s; }
   function onPPrepared(v){ setPPrep(v); pPrepRef.current=v; if (v && pPostureRef.current!=='ATTACK') { pPostureRef.current='PREP'; _setPState('PREP'); pViewRef.current='PREP'; } }
   function onCPrepared(v){ setCPrep(v); cPrepRef.current=v; if (v && cPostureRef.current!=='ATTACK') { cPostureRef.current='PREP'; _setCState('PREP'); cViewRef.current='PREP'; } }
-  function onPAttackFrame({sides}){ _setPState('ATTACK'); pPostureRef.current = 'ATTACK'; pViewRef.current='ATTACK'; const idx = pickNextAttackIdx('P'); setPAtkIdx(idx); queueAttack('P', sides*DMG_PER_CORNER); }
-  function onCAttackFrame({sides}){ _setCState('ATTACK'); cPostureRef.current = 'ATTACK'; cViewRef.current='ATTACK'; const idx = pickNextAttackIdx('C'); setCAtkIdx(idx); queueAttack('C', sides*DMG_PER_CORNER); }
+  function onPAttackFrame({sides}){ _setPState('ATTACK'); se('attack'); pPostureRef.current = 'ATTACK'; pViewRef.current='ATTACK'; const idx = pickNextAttackIdx('P'); setPAtkIdx(idx); queueAttack('P', sides*DMG_PER_CORNER); }
+  function onCAttackFrame({sides}){ _setCState('ATTACK'); se('attack'); cPostureRef.current = 'ATTACK'; cViewRef.current='ATTACK'; const idx = pickNextAttackIdx('C'); setCAtkIdx(idx); queueAttack('C', sides*DMG_PER_CORNER); }
 
   function trySuper(){
     if (!pSuperReady || !pSuperColor) return;
@@ -1247,8 +1264,8 @@ function ensureActive(side){
     clearAllPlans('C'); setCCancelSig(v=> v+1);
     setPSuper(0); setPSuperReady(false); setPSuperColor(null);
     setCLocked(true); setTimeout(()=> setCLocked(false), SUPER_LOCK_MS);
-    if (!barrier) setTempView(op, 'HIT', HIT_STUN_MS);
-  }
+    /* clash: skip hurt pose */
+}
 
   useEffect(()=>{
     if (!running || !cpuSuperOn || !cSuperReady) return;
@@ -1433,6 +1450,10 @@ function ensureActive(side){
           <input type="checkbox" checked={showDamage} onChange={(e)=> setShowDamage(e.target.checked)} />
           DMG表示
         </label>
+        <label className="ml-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={seOn} onChange={(e)=> setSeOn(e.target.checked)} />
+          SE
+        </label>
 
         <label className="ml-2 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={rightHuman} onChange={(e)=> setRightHuman(e.target.checked)} />
@@ -1450,8 +1471,8 @@ function ensureActive(side){
   </div>
 </div>
 <div className="landscape-required">
-  <div className="w-full max-w-[98vw] px-2 mb-2 vs-row grid grid-cols-4 gap-12 items-start">
-        <div className="flex justify-start">
+  <div className="w-full max-w-6xl px-4 mb-2 vs-row grid grid-cols-4 gap-6 items-start">
+        <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (pScoreRef.current += d)} exposeScoreRef={pScoreRef}
@@ -1520,7 +1541,7 @@ function ensureActive(side){
           )}
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-center">
           <Board label={ rightHuman ? 'PLAYER2' : (onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`) } isCPU={ rightHuman ? false : !onlineConnected } cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
