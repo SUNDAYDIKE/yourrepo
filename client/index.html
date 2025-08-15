@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>LoopLines – Versus (99s) v1.12</title>
+<title>LoopLines – Versus (99s) v1.14</title>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js">console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||APP_VERSION);
 </script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js">console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||APP_VERSION);
@@ -50,16 +50,9 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<script>window.APP_VERSION = "1.12";</script>
+<script>window.APP_VERSION = "1.14";</script>
 
-<script id="app-title-sync">
-(function(){
-  try{
-    var v = (window && window.APP_VERSION) ? window.APP_VERSION : null;
-    if(v){ document.title = "LoopLines – Versus (99s) v" + v; }
-  }catch(e){}
-})();
-</script>
+<script id="app-title-sync">(function(){try{var v=(window&&window.APP_VERSION)||""; if(v){ document.title="LoopLines – Versus (99s) v"+v; }}catch(e){}})();</script>
 
 </head>
 
@@ -936,15 +929,14 @@ function VersusSprites(){
   const [onlineConnected, setOnlineConnected] = useState(false);
 
   const [rows, setRows] = useState(DEFAULT_ROWS);
-  const [cols, setCols] = useState(DEFAULT_COLS);
-  const [rowsInput, setRowsInput] = useState(String(DEFAULT_ROWS));
-  const [colsInput, setColsInput] = useState(String(DEFAULT_COLS));
-  const [colorCount, setColorCount] = useState(5);
-  const [sizeOpen, setSizeOpen] = useState(false);
   const [rowSel, setRowSel] = useState(DEFAULT_ROWS);
   const [colSel, setColSel] = useState(DEFAULT_COLS);
   useEffect(()=> setRowSel(rows), [rows]);
   useEffect(()=> setColSel(cols), [cols]);
+  const [cols, setCols] = useState(DEFAULT_COLS);
+  const [rowsInput, setRowsInput] = useState(String(DEFAULT_ROWS));
+  const [colsInput, setColsInput] = useState(String(DEFAULT_COLS));
+  const [colorCount, setColorCount] = useState(5);
 
   const [seed, setSeed] = useState(()=> Math.floor(Math.random()*1e9));
 
@@ -1694,15 +1686,8 @@ function ensureActive(side){
             <label className="flex items-center gap-2">Colors
               <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
-            <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
-
-<div className="md:hidden">
-  <div className="flex items-center gap-2">
-    <button className="px-3 py-2 rounded-lg bg-slate-700 active:scale-95"
-            onClick={()=> setSizeOpen(true)}>サイズ…</button>
-    <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映</div>
-  
-<div className="hidden md:block">
+            <div className="text-xs text-slate-400">
+<div className="hidden md:block mt-2">
   <div className="grid grid-cols-2 gap-3 items-end">
     <label className="text-sm">行
       <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-2 py-2"
@@ -1717,37 +1702,8 @@ function ensureActive(side){
       </select>
     </label>
   </div>
-  <div className="text-xs text-slate-400 mt-1">※設定は次の「Start 99s」または Rematch で反映</div>
 </div>
-</div>
-  {sizeOpen && (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50">
-      <div className="w-full sm:w-[420px] bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-700 p-4">
-        <div className="text-sm mb-3 font-semibold">盤面サイズ</div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">行
-            <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-2 py-2"
-                    value={rowSel} onChange={(e)=> setRowSel(Number(e.target.value))}>
-              {[...Array(9)].map((_,i)=> 6+i).map(n=> <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label className="text-sm">列
-            <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-2 py-2"
-                    value={colSel} onChange={(e)=> setColSel(Number(e.target.value))}>
-              {[...Array(7)].map((_,i)=> 6+i).map(n=> <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button className="px-3 py-2 rounded bg-slate-700" onClick={()=> setSizeOpen(false)}>キャンセル</button>
-          <button className="px-3 py-2 rounded bg-sky-600 hover:bg-sky-500"
-                  onClick={()=>{ commitRows(rowSel); commitCols(colSel); setSizeOpen(false); }}>適用</button>
-        </div>
-      </div>
-    </div>
-  )}
-</div>
-
+※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
           </div>
 
           {/* Token matrix (custom) */}
