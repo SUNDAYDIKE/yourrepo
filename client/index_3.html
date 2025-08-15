@@ -40,14 +40,6 @@
   .landscape-required{ display:block !important; }
 }
 
-
-@media (max-width: 980px){
-  .vs-row{ gap: 2rem !important; }
-}
-@media (max-width: 760px){
-  .vs-row{ gap: 1.25rem !important; }
-}
-
 </style>
 
 </head>
@@ -1450,8 +1442,8 @@ function ensureActive(side){
   </div>
 </div>
 <div className="landscape-required">
-  <div className="w-full max-w-[98vw] px-2 mb-2 vs-row grid grid-cols-4 gap-12 items-start">
-        <div className="flex justify-start">
+  <div className="w-full max-w-6xl px-4 mb-2 vs-row grid grid-cols-4 gap-6 items-start">
+        <div className="flex justify-center">
           <Board label="PLAYER" isCPU={false} cpuLevel="EASY" active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (pScoreRef.current += d)} exposeScoreRef={pScoreRef}
@@ -1520,7 +1512,7 @@ function ensureActive(side){
           )}
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-center">
           <Board label={ rightHuman ? 'PLAYER2' : (onlineConnected ? 'ONLINE' : `CPU (${cpuLevel})`) } isCPU={ rightHuman ? false : !onlineConnected } cpuLevel={cpuLevel} active={running}
                  colorSeedGrid={colorSeed}
                  onScore={(d)=> (cScoreRef.current += d)} exposeScoreRef={cScoreRef}
