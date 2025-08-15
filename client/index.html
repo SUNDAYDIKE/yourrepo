@@ -981,26 +981,29 @@ function commitCols(val){
     if(!seOn) return;
     const ctx = getAudioCtx();
     if(!ctx) return;
-    const now = ctx.currentTime;
-    // use short click-like sound for tap; avoid exponential ramps to zero (Safari issues)
-    let f=220, type="sine", amp=0.18, dur=0.18, attack=0.008, release=0.06;
+    if (ctx.state !== "running") { try { ctx.resume(); } catch(_){} }
+    const baseNow = ctx.currentTime || 0;
+    const startAt = baseNow + 0.02; // slight offset after resume
+    // click-like envelope
+    let f=220, type="sine", amp=0.18, dur=0.14, attack=0.006, release=0.05;
     if(kind==="attack"){ f=260; type="triangle"; amp=0.22; dur=0.22; attack=0.01; release=0.08; }
-    else if(kind==="hit"){ f=160; type="square"; amp=0.24; dur=0.22; attack=0.01; release=0.10; }
-    else if(kind==="guard"){ f=420; type="sawtooth"; amp=0.18; dur=0.18; attack=0.008; release=0.06; }
-    else if(kind==="clash"){ f=300; type="square"; amp=0.18; dur=0.18; attack=0.008; release=0.06; }
-    else if(kind==="tap"){ f=880; type="triangle"; amp=0.16; dur=0.10; attack=0.006; release=0.05; }
+    else if(kind==="hit"){ f=200; type="square"; amp=0.24; dur=0.18; attack=0.01; release=0.08; }
+    else if(kind==="guard"){ f=520; type="sawtooth"; amp=0.18; dur=0.16; attack=0.008; release=0.06; }
+    else if(kind==="clash"){ f=340; type="square"; amp=0.20; dur=0.16; attack=0.008; release=0.06; }
+    else if(kind==="tap"){ f=1000; type="triangle"; amp=0.22; dur=0.10; attack=0.004; release=0.05; }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = type; osc.frequency.setValueAtTime(f, now);
+    osc.type = type; osc.frequency.setValueAtTime(f, startAt);
     osc.connect(gain).connect(ctx.destination);
     const g = gain.gain;
-    g.setValueAtTime(0.0001, now);
-    g.linearRampToValueAtTime(amp, now + attack);
-    g.linearRampToValueAtTime(0.0001, now + Math.max(attack+0.01, dur));
-    osc.start(now);
-    osc.stop(now + Math.max(attack+release, dur));
+    g.setValueAtTime(0.0001, startAt);
+    g.linearRampToValueAtTime(amp, startAt + attack);
+    g.linearRampToValueAtTime(0.0001, startAt + Math.max(attack+0.01, dur));
+    osc.start(startAt);
+    osc.stop(startAt + Math.max(attack+release, dur));
   } catch(e){}
 }
+
 
 
   const pScoreRef = useRef(0); const cScoreRef = useRef(0);
@@ -1738,4 +1741,11 @@ console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||AP
 </script>
 <script id="app-version-badge-init">(function(){try{var el=document.getElementById("app-version-badge"); if(el){ el.textContent="v"+((window&&window.APP_VERSION)||""); }}catch(e){}})();</script>
 <script>(function(){try{var v=(window&&window.APP_VERSION)||"";var secs=99;document.title="LoopLines – Versus ("+secs+"s) v"+v;}catch(e){}})();</script>
+<script>(function(){try{
+  if (window.__audioUnlockInstalled) return; window.__audioUnlockInstalled=true;
+  const handler = function(){ try{ const ctx = (window.__lastAudioCtxGetter ? window.__lastAudioCtxGetter() : null) || (window.AudioContext?new AudioContext(): (window.webkitAudioContext? new webkitAudioContext(): null)); if (ctx && ctx.state !== "running") ctx.resume(); }catch(e){} window.removeEventListener("pointerdown", handler, {capture:true}); };
+  window.__lastAudioCtxGetter = window.__lastAudioCtxGetter || (function(){ return (typeof getAudioCtx==="function") ? getAudioCtx() : null; });
+  window.addEventListener("pointerdown", handler, {capture:true, passive:true});
+}catch(e){}})();
+</script>
 </body></html>
