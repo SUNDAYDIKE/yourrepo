@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>LoopLines – Versus (99s) v1.14</title>
+<title>LoopLines – Versus</title>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js">console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||APP_VERSION);
 </script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js">console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||APP_VERSION);
@@ -50,16 +50,12 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<script>window.APP_VERSION = "1.14";</script>
-
-<script id="app-title-sync">(function(){try{var v=(window&&window.APP_VERSION)||""; if(v){ document.title="LoopLines – Versus (99s) v"+v; }}catch(e){}})();</script>
-
+<script>window.APP_VERSION = "1.12";</script>
 </head>
 
 <body>
 
 <div id="app-version-badge" style="position:fixed;top:8px;right:8px;z-index:9999;font:12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;color:#cbd5e1;background:rgba(2,6,23,.72);border:1px solid rgba(51,65,85,.6);padding:4px 6px;border-radius:8px;user-select:none"></div>
-
 <div id="root"></div>
 
 <script type="text/babel" data-presets="env,react">
@@ -493,7 +489,9 @@ useEffect(()=>{
     if(!color || color!==activeColor) return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
-  }
+      if(!isCPU) try{ se("tap"); }catch(e){}
+      if(!isCPU) try{ se("tap"); }catch(e){}
+      }
 
   // window mouseup: close if armed
   useEffect(() => {
@@ -929,10 +927,6 @@ function VersusSprites(){
   const [onlineConnected, setOnlineConnected] = useState(false);
 
   const [rows, setRows] = useState(DEFAULT_ROWS);
-  const [rowSel, setRowSel] = useState(DEFAULT_ROWS);
-  const [colSel, setColSel] = useState(DEFAULT_COLS);
-  useEffect(()=> setRowSel(rows), [rows]);
-  useEffect(()=> setColSel(cols), [cols]);
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [rowsInput, setRowsInput] = useState(String(DEFAULT_ROWS));
   const [colsInput, setColsInput] = useState(String(DEFAULT_COLS));
@@ -981,8 +975,7 @@ function commitCols(val){
   const audioCtxRef = useRef(null);
   function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
     if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
-  function se(kind){ try { if(!seOn) return; const ctx=getAudioCtx(); if(!ctx) return; const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.connect(gain).connect(ctx.destination);
-    const now=ctx.currentTime; let f=220, t="sine"; if(kind==="attack"){ f=260; t="triangle"; } else if(kind==="hit"){ f=160; t="square"; } else if(kind==="guard"){ f=420; t="sawtooth"; } else if(kind==="clash"){ f=300; t="square"; }
+  function se(kind){ try { if(!seOn) return; const ctx=getAudioCtx(); if(!ctx) return; const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.connect(gain).connect(ctx.destination); const now=ctx.currentTime; let f=220, t="sine", amp=0.22, dur=0.22, a=0.02; if(kind==="attack"){ f=260; t="triangle"; amp=0.22; dur=0.22; a=0.02; } else if(kind==="hit"){ f=160; t="square"; amp=0.24; dur=0.22; a=0.02; } else if(kind==="guard"){ f=420; t="sawtooth"; amp=0.18; dur=0.18; a=0.015; } else if(kind==="clash"){ f=300; t="square"; amp=0.18; dur=0.18; a=0.015; } else if(kind==="tap"){ f=480; t="sine"; amp=0.06; dur=0.12; a=0.008; } osc.type=t; osc.frequency.setValueAtTime(f, now); gain.gain.setValueAtTime(0.001, now); gain.gain.exponentialRampToValueAtTime(amp, now+a); gain.gain.exponentialRampToValueAtTime(0.001, now+dur); osc.start(now); osc.stop(now+dur); } catch(e){} } else if(kind==="hit"){ f=160; t="square"; } else if(kind==="guard"){ f=420; t="sawtooth"; } else if(kind==="clash"){ f=300; t="square"; }
     osc.type=t; osc.frequency.setValueAtTime(f, now); gain.gain.setValueAtTime(0.001, now); gain.gain.exponentialRampToValueAtTime(0.22, now+0.02); gain.gain.exponentialRampToValueAtTime(0.001, now+0.20); osc.start(now); osc.stop(now+0.22); } catch(e){} }
 
 
@@ -1512,7 +1505,7 @@ function ensureActive(side){
   return (
     <div className="w-full min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center py-6">
       <div className="w-full max-w-6xl px-4 mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">LoopLines – Versus (99s) v1.08h</h1>
+        <h1 className="text-xl font-semibold">{`LoopLines – Versus (${Math.round(DURATION_MS/1000)}s) v${(typeof window!=='undefined' && window.APP_VERSION) || ""}`}</h1>
 
         <div className="ml-2 flex items-center gap-2 text-sm">
           <label htmlFor="glowSpeed" className="opacity-80">面発光スピード</label>
@@ -1676,34 +1669,13 @@ function ensureActive(side){
         </div>
 
         <div className="w-full mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="hidden">
-            <label className="flex items-center gap-2">Rows
-              <input type="number" min="6" max="14" value={rows} onChange={e=> { const v=Math.max(6, Math.min(14, Number(e.target.value)||DEFAULT_ROWS)); setRows(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
-            </label>
-            <label className="flex items-center gap-2">Cols
-              <input type="number" min="6" max="12" value={cols} onChange={e=> { const v=Math.max(6, Math.min(12, Number(e.target.value)||DEFAULT_COLS)); setCols(v); setCustomGrid(null); }} className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
-            </label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="flex items-center gap-2">Rows<select value={rows} onChange={e=> { const v=Number(e.target.value)||DEFAULT_ROWS; setRows(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running}>{Array.from({length: 14-6+1}, (_,i)=> i+6).map(v=> (<option key={v} value={v}>{v}</option>))}</select></label>
+            <label className="flex items-center gap-2">Cols<select value={cols} onChange={e=> { const v=Number(e.target.value)||DEFAULT_COLS; setCols(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running}>{Array.from({length: 12-6+1}, (_,i)=> i+6).map(v=> (<option key={v} value={v}>{v}</option>))}</select></label>
             <label className="flex items-center gap-2">Colors
               <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
             </label>
-            <div className="text-xs text-slate-400">
-<div className="hidden md:block mt-2">
-  <div className="grid grid-cols-2 gap-3 items-end">
-    <label className="text-sm">行
-      <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-2 py-2"
-              value={rowSel} onChange={(e)=> { const v = Number(e.target.value); setRowSel(v); commitRows(v); }}>
-        {[...Array(9)].map((_,i)=> 6+i).map(n=> <option key={n} value={n}>{n}</option>)}
-      </select>
-    </label>
-    <label className="text-sm">列
-      <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-2 py-2"
-              value={colSel} onChange={(e)=> { const v = Number(e.target.value); setColSel(v); commitCols(v); }}>
-        {[...Array(7)].map((_,i)=> 6+i).map(n=> <option key={n} value={n}>{n}</option>)}
-      </select>
-    </label>
-  </div>
-</div>
-※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
+            <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
           </div>
 
           {/* Token matrix (custom) */}
@@ -1743,18 +1715,5 @@ console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||AP
   <script src="online_lockstep_hotfix.js?v=1">console.log('App version', (typeof window!=='undefined'&&window.APP_VERSION)||APP_VERSION);
 </script>
 <script id="app-version-badge-init">(function(){try{var el=document.getElementById("app-version-badge"); if(el){ el.textContent="v"+((window&&window.APP_VERSION)||""); }}catch(e){}})();</script>
+<script>(function(){try{var v=(window&&window.APP_VERSION)||"";var secs=99;document.title="LoopLines – Versus ("+secs+"s) v"+v;}catch(e){}})();</script>
 </body></html>
-const APP_VERSION = '1.10';
-const APP_VERSION = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : '1.12';
-function tryLandscapeLock(){
-  const el = document.documentElement;
-  try {
-    if (!document.fullscreenElement && el.requestFullscreen) {
-      el.requestFullscreen().catch(()=>{});
-    }
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(()=>{});
-    }
-  } catch (_) {}
-}
-
