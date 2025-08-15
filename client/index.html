@@ -348,6 +348,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   const paletteRef = useRef([]);
   const colRngsRef = useRef(null);
   const spawnNonceRef = useRef(0);
+  const lastSpawnSigRef = useRef(Array(cols).fill("")); // prev column spawn sig
   const seedOffRef = useRef(Array(cols).fill(0));
 
   const [combo, setCombo] = useState(1.0);
