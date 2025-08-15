@@ -477,7 +477,9 @@ useEffect(()=>{
     const token=grid[r][c];
     const color=token?.color;
     if(!start){
-      setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true); return;
+      setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true);
+      if(!isCPU) try{ se("tap"); } catch(e){}
+      return;
     }
     if(r===start[0] && c===start[1]){
       if(path.length>=3){
@@ -489,8 +491,7 @@ useEffect(()=>{
     if(!color || color!==activeColor) return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
-      if(!isCPU) try{ se("tap"); }catch(e){}
-      if(!isCPU) try{ se("tap"); }catch(e){}
+      if(!isCPU) try{ se("tap"); } catch(e){}
       }
 
   // window mouseup: close if armed
@@ -1671,9 +1672,7 @@ function ensureActive(side){
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="flex items-center gap-2">Rows<select value={rows} onChange={e=> { const v=Number(e.target.value)||DEFAULT_ROWS; setRows(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running}>{Array.from({length: 14-6+1}, (_,i)=> i+6).map(v=> (<option key={v} value={v}>{v}</option>))}</select></label>
             <label className="flex items-center gap-2">Cols<select value={cols} onChange={e=> { const v=Number(e.target.value)||DEFAULT_COLS; setCols(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running}>{Array.from({length: 12-6+1}, (_,i)=> i+6).map(v=> (<option key={v} value={v}>{v}</option>))}</select></label>
-            <label className="flex items-center gap-2">Colors
-              <input type="number" min="3" max="11" value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running} />
-            </label>
+            <label className="flex items-center gap-2">Colors<select value={colorCount} onChange={e=> { const v=Math.max(3, Math.min(11, Number(e.target.value)||5)); setColorCount(v); setCustomGrid(null); }} className="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1" disabled={running}>{Array.from({length: 11-3+1}, (_,i)=> i+3).map(v=> (<option key={v} value={v}>{v}</option>))}</select></label>
             <div className="text-xs text-slate-400">※設定は次の「Start 99s」またはRematchで反映。カスタム行列が有効な場合はそちらが優先。</div>
           </div>
 
