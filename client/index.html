@@ -478,7 +478,7 @@ useEffect(()=>{
     const color=token?.color;
     if(!start){
       setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true);
-try{ if (!window.__REPLAYING) se("select"); }catch(e){}
+selectedRef.current = true;
 return;
     }
     if(r===start[0] && c===start[1]){
@@ -491,7 +491,7 @@ return;
     if(!color || color!==activeColor) return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
-try{ if (!window.__REPLAYING) se("select"); }catch(e){}
+selectedRef.current = true;
 }
 
   // window mouseup: close if armed
@@ -503,12 +503,18 @@ try{ if (!window.__REPLAYING) se("select"); }catch(e){}
         if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
         setLeftDown(false); setClosingArmed(false);
       }
+    
+      try{ if(selectedRef.current && !window.__REPLAYING) se('select'); }catch(_){}
+      selectedRef.current = false;
     }
     window.addEventListener('mouseup', onWinMouseUp);
     function onWinTouchEnd(){
       recentTouchRef.current = Date.now();
       if (closingArmed) { onPhase?.("ATTACK"); handleLoopClose(); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'closeLoop'}); }
       setLeftDown(false); setClosingArmed(false);
+    
+      try{ if(selectedRef.current && !window.__REPLAYING) se('select'); }catch(_){}
+      selectedRef.current = false;
     }
     window.addEventListener('touchend', onWinTouchEnd);
     return () => { window.removeEventListener('mouseup', onWinMouseUp); window.removeEventListener('touchend', onWinTouchEnd); };
@@ -974,6 +980,7 @@ function commitCols(val){
   const [showDamage, setShowDamage] = useState(true);
   const [seOn, setSeOn] = useState(true);
   const audioCtxRef = useRef(null);
+  const selectedRef = useRef(false);
   function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
     if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
   function se(kind){
