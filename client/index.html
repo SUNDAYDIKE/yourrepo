@@ -295,7 +295,7 @@ function Board({ label, isCPU, cpuLevel, active, colorSeedGrid, onScore, exposeS
   useEffect(() => {
     window.__REPLAYING = false;
     // Expose local apply API for remote commands
-    window.__applyStart = (r,c) => { onCellTap(r,c); try{ if (canTap) se("select"); }catch(e){} if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyExtend = (r,c) => { onCellTap(r,c); try{ if (canTap) se("select"); }catch(e){} if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyCancelLast = () => { 
+    window.__applyStart = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyExtend = (r,c) => { onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); };window.__applyCancelLast = () => { 
       if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); } 
       else { setPath(p => (p.length>1 ? p.slice(0,-1) : p)); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
     };
@@ -478,6 +478,7 @@ useEffect(()=>{
     const color=token?.color;
     if(!start){
       setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true);
+try{ if (!window.__REPLAYING) se("select"); }catch(e){}
 return;
     }
     if(r===start[0] && c===start[1]){
@@ -490,6 +491,7 @@ return;
     if(!color || color!==activeColor) return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
+try{ if (!window.__REPLAYING) se("select"); }catch(e){}
 }
 
   // window mouseup: close if armed
@@ -795,11 +797,9 @@ function _regionSig(gridAfter, toClearLine, rows, cols){
               const highlighted = highlightSet.has(keyRC(r,c));
               const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
               const handlers = isCPU ? {} : {
-                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); try{ if (canTap) se("select"); }catch(e){}
-                onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
+                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{ recentTouchRef.current = Date.now(); if (locked) return;
-                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); try{ if (canTap) se("select"); }catch(e){}
-                  onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
                     if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
@@ -990,7 +990,7 @@ function commitCols(val){
     else if(kind==="guard"){ f=420; type="sawtooth"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
     else if(kind==="clash"){ f=300; type="square"; amp=0.18; dur=0.18; attack=0.008; release=0.060; }
     else if(kind==="tap"){ f=1100; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
-    else if(kind==="select"){ f=900; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
+    else if(kind==="select"){ f=1000; type="triangle"; amp=0.28; dur=0.09; attack=0.004; release=0.050; }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type; osc.frequency.setValueAtTime(f, startAt);
