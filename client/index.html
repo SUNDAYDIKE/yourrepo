@@ -479,6 +479,7 @@ useEffect(()=>{
     if(!start){
       setStart([r,c]); setActiveColor(color); setPath([[r,c]]); onPhase?.("PREP"); onPreparedChange?.(true);
 selectedRef.current = true;
+playSelectSe();
 return;
     }
     if(r===start[0] && c===start[1]){
@@ -492,6 +493,7 @@ return;
     if(path.some(([rr,cc])=> rr===r && cc===c)) return;
     setPath(p=>[...p,[r,c]]);
 selectedRef.current = true;
+playSelectSe();
 }
 
   // window mouseup: close if armed
@@ -803,9 +805,9 @@ function _regionSig(gridAfter, toClearLine, rows, cols){
               const highlighted = highlightSet.has(keyRC(r,c));
               const glowAlpha = highlighted ? (blink ? 0.98 : 0.48) : 0;
               const handlers = isCPU ? {} : {
-                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
+                onMouseDown: (e)=>{ if (Date.now() - recentTouchRef.current < 500) return; if(e.button===0){ setLeftDown(true); playSelectSe(); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] }); } },
                 onTouchStart: (e)=>{ recentTouchRef.current = Date.now(); if (locked) return;
-                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
+                  if (e.touches.length === 1){ e.preventDefault(); setLeftDown(true); playSelectSe(); onCellTap(r,c); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({ kind:'tap', args:[r,c] });
                   } else if (e.touches.length === 2){
                     e.preventDefault();
                     if (closingArmed){ setIsClosing(false); setClosingArmed(false); if (!window.__REPLAYING && window.Net && onlineRef.current?.connected) Net.sendCmd({kind:'twoFinger'}); }
@@ -981,7 +983,16 @@ function commitCols(val){
   const [seOn, setSeOn] = useState(true);
   const audioCtxRef = useRef(null);
   const selectedRef = useRef(false);
-  function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
+  const lastSelectSeAtRef = useRef(0);
+  function playSelectSe(){
+    try{
+      if(!seOn) return;
+      const now = (typeof performance!=="undefined" && performance && performance.now) ? performance.now() : Date.now();
+      if (now - lastSelectSeAtRef.current < 120) return; // debounce ~120ms to avoid double
+      lastSelectSeAtRef.current = now;
+      if (!window.__REPLAYING) se("select");
+    }catch(_){}
+  }function getAudioCtx(){ if (!audioCtxRef.current){ const AC=window.AudioContext||window.webkitAudioContext; if (AC) audioCtxRef.current = new AC(); }
     if (audioCtxRef?.current?.state==="suspended") audioCtxRef.current.resume().catch(()=>{}); return audioCtxRef.current; }
   function se(kind){
   try {
